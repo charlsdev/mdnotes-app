@@ -66,7 +66,8 @@ export default function LibraryScreen() {
   const handleCreate = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const file = await create();
-    openNote(file);
+    // `new` → el editor arranca en EDIT (nota recién creada); abrir existente → VIEW.
+    router.push({ pathname: '/editor/[id]', params: { id: file.id, new: '1' } });
   };
 
   // Navega al editor pasando el id como PARÁMETRO (se codifica bien; los id de

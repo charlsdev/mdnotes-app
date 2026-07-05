@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,7 +36,7 @@ interface Sel {
 }
 
 export default function EditorScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -47,7 +46,8 @@ export default function EditorScreen() {
 
   const [file, setFile] = useState<MdFile | null>(null);
   const [content, setContent] = useState('');
-  const [mode, setMode] = useState<EditorMode>('edit');
+  // Nota nueva → EDIT (la creaste para escribir); abrir existente → VIEW (leer).
+  const [mode, setMode] = useState<EditorMode>(isNew ? 'edit' : 'view');
   const [rendered, setRendered] = useState('');
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [selection, setSelection] = useState<Sel>({ start: 0, end: 0 });
