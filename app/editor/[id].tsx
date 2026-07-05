@@ -21,6 +21,7 @@ import { MdFile, EditorMode } from '@/types';
 import { EditorToolbar } from '@/components/EditorToolbar';
 import { ModeToggle } from '@/components/ModeToggle';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { MarkdownWysiwyg } from '@/components/MarkdownWysiwyg';
 import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
 import { mdToHtml } from '@/lib/markdown';
@@ -46,24 +47,58 @@ export default function EditorScreen() {
 
   const [file, setFile] = useState<MdFile | null>(null);
   const [content, setContent] = useState('');
-  // Nota nueva → EDIT (la creaste para escribir); abrir existente → VIEW (leer).
-  const [mode, setMode] = useState<EditorMode>(isNew ? 'edit' : 'view');
+  // Nota nueva → CÓDIGO (escribir rápido); abrir existente → VER (leer). VIVO
+  // (WYSIWYG) es opt-in por nota para no cargar el editor pesado sin querer.
+  const [mode, setMode] = useState<EditorMode>(isNew ? 'code' : 'view');
   const [rendered, setRendered] = useState('');
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [selection, setSelection] = useState<Sel>({ start: 0, end: 0 });
+  // Markdown con imágenes del vault embebidas (data URI) para el editor VIVO, y
+  // el mapa para restaurar las rutas originales al guardar.
+  const [liveMd, setLiveMd] = useState<string | null>(null);
+  const imgRestore = useRef<Array<[string, string]>>([]);
 
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
   // antes de pasar el contenido al preview (el WebView no lee content:// sueltos).
   useEffect(() => {
     if (mode !== 'view') return;
     let alive = true;
-    inlineLocalImages(content, file?.folder ?? '', vaultImages).then((html) => {
-      if (alive) setRendered(html);
+    inlineLocalImages(content, file?.folder ?? '', vaultImages).then(({ md }) => {
+      if (alive) setRendered(md);
     });
     return () => {
       alive = false;
     };
   }, [mode, content, file?.folder, vaultImages]);
+
+  // Al entrar a VIVO (o cambiar de nota), embebe las imágenes locales como data
+  // URI para que Crepe las muestre. NO depende de `content` (evita re-feed loop).
+  useEffect(() => {
+    if (mode !== 'live') {
+      setLiveMd(null);
+      return;
+    }
+    let alive = true;
+    setLiveMd(null);
+    inlineLocalImages(content, file?.folder ?? '', vaultImages).then(({ md, restore }) => {
+      if (!alive) return;
+      imgRestore.current = restore;
+      // Crepe NO renderiza <img> HTML (lo muestra como texto). Lo convertimos a
+      // sintaxis Markdown ![](...) para que sí muestre la imagen en VIVO.
+      setLiveMd(md.replace(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi, (_m, src) => `![](${src})`));
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, id, file?.folder, vaultImages]);
+
+  // Cambio desde VIVO: restaura las rutas originales de imagen antes de guardar.
+  const onLiveChange = useCallback((md: string) => {
+    let restored = md;
+    for (const [dataUri, ref] of imgRestore.current) restored = restored.split(dataUri).join(ref);
+    setContent(restored);
+  }, []);
 
   const inputRef = useRef<TextInput>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,7 +214,7 @@ export default function EditorScreen() {
   const handleExportPDF = async () => {
     if (!file) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const resolved = await inlineLocalImages(content, file.folder ?? '', vaultImages);
+    const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', vaultImages);
     const { uri } = await Print.printToFileAsync({ html: mdToHtml(resolved, 'pdf', { pdfMarginMm }) });
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
@@ -287,7 +322,18 @@ export default function EditorScreen() {
       {/* KeyboardAvoidingView de react-native-keyboard-controller (como daemoni):
           sigue el teclado animado y mantiene la toolbar del editor por encima. */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        {mode === 'edit' ? (
+        {mode === 'live' ? (
+          // WYSIWYG (Milkdown Crepe): editas sobre el documento renderizado.
+          // Espera a que las imágenes del vault estén embebidas (liveMd) para no
+          // arrancar con imágenes rotas.
+          liveMd === null ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={theme.accent} />
+            </View>
+          ) : (
+            <MarkdownWysiwyg noteId={id ?? ''} initialMarkdown={liveMd} onChange={onLiveChange} />
+          )
+        ) : mode === 'code' ? (
           <>
             <TextInput
               ref={inputRef}
@@ -388,11 +434,12 @@ const IMG_MD_RE = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
 const IMG_HTML_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi;
 
 // Reemplaza imágenes locales (Markdown y <img>) por data URIs leídos del vault.
+// `restore` mapea dataUri → ref original (para deshacer al guardar desde VIVO).
 async function inlineLocalImages(
   content: string,
   folder: string,
   images: Record<string, string>
-): Promise<string> {
+): Promise<{ md: string; restore: Array<[string, string]> }> {
   const refs = new Set<string>();
   let m: RegExpExecArray | null;
   IMG_MD_RE.lastIndex = 0;
@@ -414,9 +461,13 @@ async function inlineLocalImages(
     }
   }
 
-  let out = content;
-  for (const [ref, data] of Object.entries(replacements)) out = out.split(ref).join(data);
-  return out;
+  let md = content;
+  const restore: Array<[string, string]> = [];
+  for (const [ref, data] of Object.entries(replacements)) {
+    md = md.split(ref).join(data);
+    restore.push([data, ref]);
+  }
+  return { md, restore };
 }
 
 async function writeTempMd(name: string, content: string): Promise<string> {

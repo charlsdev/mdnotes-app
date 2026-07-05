@@ -1,0 +1,16 @@
+{
+  "name": "mdnotes-webeditor",
+  "private": true,
+  "type": "module",
+  "description": "Editor WYSIWYG (Milkdown Crepe) bundleado a un HTML autónomo, embebido en el WebView del app. NO forma parte del bundle de la app; ver build.mjs.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@milkdown/crepe": "^7.6.0",
+    "@milkdown/kit": "^7.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

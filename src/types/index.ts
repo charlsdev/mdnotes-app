@@ -12,4 +12,5 @@ export interface MdFile {
   folder?: string;
 }
 
-export type EditorMode = 'edit' | 'view';
+// live = WYSIWYG (Crepe) · code = Markdown crudo · view = preview de solo lectura.
+export type EditorMode = 'live' | 'code' | 'view';

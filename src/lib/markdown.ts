@@ -34,7 +34,9 @@ const ALERTS: Record<string, { label: string; icon: string }> = {
     icon: 'M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z',
   },
 };
-const ALERT_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/;
+// Tolerante: espacios iniciales y mayúsc/minúsc (`>  [!warning]` también cuenta).
+const ALERT_RE = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i;
+const ALERT_STRIP = /^\s*\[![a-z]+\]\s*\n?/i;
 
 function githubAlerts(md: MarkdownIt) {
   md.core.ruler.after('block', 'github_alerts', (state) => {
@@ -45,13 +47,13 @@ function githubAlerts(md: MarkdownIt) {
       if (!inline || inline.type !== 'inline') continue;
       const m = inline.content.match(ALERT_RE);
       if (!m) continue;
-      const type = m[1];
+      const type = m[1].toUpperCase();
       tokens[i].attrJoin('class', `gh-alert gh-alert-${type.toLowerCase()}`);
       tokens[i].meta = { ...(tokens[i].meta || {}), alert: type };
-      inline.content = inline.content.replace(/^\[![A-Z]+\]\s*\n?/, '');
+      inline.content = inline.content.replace(ALERT_STRIP, '');
       const kids = inline.children;
       if (kids && kids[0] && kids[0].type === 'text' && ALERT_RE.test(kids[0].content)) {
-        kids[0].content = kids[0].content.replace(/^\[![A-Z]+\]\s*/, '');
+        kids[0].content = kids[0].content.replace(/^\s*\[![a-z]+\]\s*/i, '');
         if (kids[0].content === '' && kids[1] && (kids[1].type === 'softbreak' || kids[1].type === 'hardbreak')) {
           kids.splice(0, 2);
         } else if (kids[0].content === '') {
@@ -130,7 +132,7 @@ function alertColors(isDark: boolean) {
 function pageCss(p: Palette, isDark: boolean, forPdf: boolean, marginMm: number): string {
   const a = alertColors(isDark);
   const alertBlock = (name: keyof ReturnType<typeof alertColors>, cls: string) => `
-    blockquote.gh-alert-${cls} { border-left-color: ${a[name]}; background: ${a[name]}14; }
+    blockquote.gh-alert-${cls} { border-left-color: ${a[name]}; background: ${a[name]}22; }
     blockquote.gh-alert-${cls} .gh-alert-title { color: ${a[name]}; }`;
   // El margen del PDF se aplica como padding del body (determinista en expo-print);
   // `@page margin: 0` quita el margen por defecto de la impresora para no sumar.

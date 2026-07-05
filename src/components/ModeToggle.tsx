@@ -8,11 +8,14 @@ interface Props {
   onChange: (m: EditorMode) => void;
 }
 
+const LABELS: Record<EditorMode, string> = { live: 'VIVO', code: 'MD', view: 'VER' };
+const ORDER: EditorMode[] = ['live', 'code', 'view'];
+
 export function ModeToggle({ mode, onChange }: Props) {
   const theme = useTheme();
   return (
     <View style={[styles.wrap, { backgroundColor: theme.bg2 }]}>
-      {(['edit', 'view'] as EditorMode[]).map((m) => {
+      {ORDER.map((m) => {
         const active = m === mode;
         return (
           <TouchableOpacity
@@ -23,9 +26,7 @@ export function ModeToggle({ mode, onChange }: Props) {
             }}
             style={[styles.opt, active && { backgroundColor: theme.ink }]}
           >
-            <Text style={[styles.txt, { color: active ? theme.bg : theme.muted }]}>
-              {m === 'edit' ? 'EDIT' : 'VIEW'}
-            </Text>
+            <Text style={[styles.txt, { color: active ? theme.bg : theme.muted }]}>{LABELS[m]}</Text>
           </TouchableOpacity>
         );
       })}

@@ -1,0 +1,100 @@
+/* Override de las variables de Crepe para la paleta de MDNotes (papel/tinta/bermellón). */
+:root {
+  --crepe-color-background: #f5f1ea;
+  --crepe-color-on-background: #1a1714;
+  --crepe-color-surface: #f5f1ea;
+  --crepe-color-surface-low: #efe9df;
+  --crepe-color-on-surface: #1a1714;
+  --crepe-color-on-surface-variant: #8a8275;
+  --crepe-color-outline: #d8d2c5;
+  --crepe-color-primary: #c14a2b;
+  --crepe-color-secondary: #e8e0d0;
+  --crepe-color-on-secondary: #1a1714;
+  --crepe-color-inverse: #1a1714;
+  --crepe-color-on-inverse: #f5f1ea;
+  --crepe-color-inline-code: #c14a2b;
+  --crepe-color-error: #c14a2b;
+  --crepe-color-hover: #ece7dd;
+  --crepe-color-selected: #e3ddd0;
+  --crepe-color-inline-area: #ece7dd;
+  --crepe-font-title: Georgia, 'Times New Roman', serif;
+  --crepe-font-default: -apple-system, Roboto, system-ui, sans-serif;
+  --crepe-font-code: 'SF Mono', Menlo, monospace;
+}
+
+body.dark {
+  --crepe-color-background: #12100e;
+  --crepe-color-on-background: #f5f1ea;
+  --crepe-color-surface: #12100e;
+  --crepe-color-surface-low: #1c1a16;
+  --crepe-color-on-surface: #f5f1ea;
+  --crepe-color-on-surface-variant: #8a8275;
+  --crepe-color-outline: #2a2620;
+  --crepe-color-secondary: #1c1a16;
+  --crepe-color-on-secondary: #f5f1ea;
+  --crepe-color-inverse: #f5f1ea;
+  --crepe-color-on-inverse: #12100e;
+  --crepe-color-hover: #201d19;
+  --crepe-color-selected: #26221c;
+  --crepe-color-inline-area: #201d19;
+}
+
+html, body { margin: 0; padding: 0; background: var(--crepe-color-background); }
+#app { min-height: 100vh; }
+.milkdown { padding: 0; }
+
+/* Contenido a lo ancho — responsive: full en móvil, centrado (ancho máx) en tablet.
+   El default de Crepe es padding 60px 120px, muy angosto en teléfono.
+   El padding-left deja hueco para el control de bloque (+/arrastrar). */
+.milkdown .ProseMirror {
+  outline: none;
+  padding: 18px 16px 160px 66px !important; /* left = hueco para el control +/⠿ */
+  max-width: 900px;
+  margin: 0 auto;
+}
+@media (min-width: 640px) {
+  .milkdown .ProseMirror { padding: 32px 44px 160px 78px !important; }
+}
+
+/* Control de bloque (+/arrastrar) más chico para que quepa en el margen. */
+.milkdown .milkdown-block-handle .operation-item { width: 26px !important; height: 26px !important; }
+.milkdown .milkdown-block-handle .operation-item svg { width: 18px !important; height: 18px !important; }
+
+/* Quita el "cuadrito" oscuro de la línea activa del bloque de código (CodeMirror). */
+.milkdown .cm-activeLine { background: transparent !important; }
+.milkdown .cm-activeLineGutter { background: transparent !important; color: inherit !important; }
+
+/* Acentos de marca (acercar VIVO a VER) */
+.milkdown .ProseMirror a { color: #c14a2b; }
+.milkdown .ProseMirror blockquote { border-left: 3px solid #c14a2b99; }
+.milkdown .ProseMirror strong { color: var(--crepe-color-on-background); }
+.milkdown .ProseMirror h1, .milkdown .ProseMirror h2, .milkdown .ProseMirror h3 { letter-spacing: -0.3px; color: var(--crepe-color-on-background); }
+
+/* Callouts de color en VIVO (mismo esquema que VER; los pinta alerts.ts) */
+.milkdown .ProseMirror blockquote.gh-alert {
+  border-left-width: 4px;
+  border-radius: 0 8px 8px 0;
+  padding: 4px 14px;
+  font-style: normal;
+}
+.milkdown .ProseMirror blockquote.gh-alert-note { border-left-color: #0969da; background: #0969da18; }
+.milkdown .ProseMirror blockquote.gh-alert-tip { border-left-color: #1a7f37; background: #1a7f3718; }
+.milkdown .ProseMirror blockquote.gh-alert-important { border-left-color: #8250df; background: #8250df18; }
+.milkdown .ProseMirror blockquote.gh-alert-warning { border-left-color: #9a6700; background: #9a670018; }
+.milkdown .ProseMirror blockquote.gh-alert-caution { border-left-color: #d1242f; background: #d1242f18; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-note { border-left-color: #4493f8; background: #4493f822; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-tip { border-left-color: #3fb950; background: #3fb95022; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-important { border-left-color: #ab7df8; background: #ab7df822; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-warning { border-left-color: #d29922; background: #d2992222; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-caution { border-left-color: #f85149; background: #f8514922; }
+
+/* Menú de inserción (slash) más compacto */
+.milkdown .milkdown-slash-menu .menu-groups { max-height: 300px !important; padding: 0 8px 8px !important; }
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li {
+  padding: 8px 10px !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+}
+.milkdown .milkdown-slash-menu .menu-groups .menu-group h6 { padding: 10px 10px 4px !important; }
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li svg { width: 20px !important; height: 20px !important; }
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li > span { font-size: 13px !important; line-height: 18px !important; }
