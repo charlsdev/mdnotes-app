@@ -13,8 +13,9 @@
 3. Color
 4. Tipografía
 5. Iconografía
-6. Voz y tono
-7. Créditos
+6. El editor
+7. Voz y tono
+8. Créditos
 
 ---
 
@@ -75,8 +76,8 @@ distorsiones, le añadas sombras ni degradados.
 
 ## 03 · Color
 
-**Bermellón es el ÚNICO acento.** Sin azul, verde ni morado para nada. Un solo color de
-énfasis en toda la app hace que cada aparición pese más.
+**Bermellón es el único acento de la interfaz.** Sin azul, verde ni morado en la UI. Un solo
+color de énfasis en toda la app hace que cada aparición pese más.
 
 Paleta en `src/theme/index.ts`.
 
@@ -96,6 +97,20 @@ Paleta en `src/theme/index.ts`.
 - **Papel nunca es blanco puro** (`#fff`). El fondo cálido evita el brillo azulado que cansa la vista.
 - **Bermellón** se reserva para lo que importa: un link, el botón primario, la nota abierta, el FAB.
 - **Sepia** para tags y callouts de tipo nota/consejo, para que no compitan con el bermellón.
+
+### La excepción · callouts estilo GitHub
+
+Los callouts (`> [!NOTE]`, `> [!TIP]`, etc.) son la única excepción consciente al
+monocromático: heredan el código de color de GitHub para que quien ya escribe Markdown los
+reconozca al instante. Fuera de los callouts, la regla del acento único sigue firme.
+
+| Tipo | Color |
+|---|---|
+| NOTE | Azul `#4493f8` |
+| TIP | Verde `#3fb950` |
+| IMPORTANT | Morado `#ab7df8` |
+| WARNING | Ámbar `#d29922` |
+| CAUTION | Rojo `#f85149` |
 
 ### Contraste claro / oscuro
 
@@ -164,7 +179,32 @@ en todos los tamaños de iOS y Android.
 
 ---
 
-## 06 · Voz y tono
+## 06 · El editor
+
+**Typora en el bolsillo: el mismo texto, tres modos.** Un toggle en la barra superior cambia
+entre ellos según lo que necesites.
+
+- **VIVO** — WYSIWYG en vivo tipo Typora (Milkdown Crepe). Editas sobre el documento ya
+  renderizado: negritas, títulos, callouts de color, tablas, código y mates, todo en su sitio.
+- **MD** — Markdown crudo en monospace con la toolbar completa. Control byte a byte, para
+  cuando quieres exactamente ese `.md` sin reformateo automático.
+- **VER** — preview de solo lectura, el mismo motor que genera el PDF.
+
+**Un motor, dos salidas.** El modo VER y el export PDF comparten la misma función de render
+(`mdToHtml`). Por eso la pantalla y el PDF son idénticos: lo que ves es lo que exportas.
+
+### Tu forma de leer · ajustes
+
+- **Tema** — sistema, claro u oscuro. El bermellón no cambia; sí el papel y la tinta.
+- **Tamaño** — escala de lectura ajustable en VER, editor MD y VIVO.
+- **Fuente** — sans, serif o monospace para el modo lectura.
+- **Tags** — chips editables desde el editor, guardados en frontmatter YAML
+  (`---\ntags: [a,b]\n---`); también se derivan de `#hashtags` del cuerpo. Portables a
+  Obsidian, con filtro por tag en la biblioteca.
+
+---
+
+## 07 · Voz y tono
 
 **Habla como un buen editor.**
 
@@ -182,14 +222,14 @@ en la interfaz. La calidez viene de la claridad, no de la efusividad.
 ### ✗ Evitar
 
 - ~~"Comenzar una nueva entrada"~~
-- ~~"Guardando…"~~ (proceso, no resultado)
+- ~~"Procesando su solicitud…"~~ (palabrería; "Guardando…/Guardado" sí sirve)
 - ~~"¡Ups! Algo salió mal 😕"~~
 - ~~"¡No tienes notas aún! ¡Crea una!"~~
 - ~~"Lo sentimos mucho, ha habido un problemita 😢"~~
 
 ### Principios de redacción
 
-1. **Verbo en pasado para lo hecho.** "Guardado", no "Guardando…". El estado, no el proceso.
+1. **Di el estado, no discurses.** "Guardando…" y luego "Guardado" informa en una palabra; "Procesando su solicitud…" sobra.
 2. **Concreto antes que genérico.** "Nueva nota", no "Comenzar una nueva entrada".
 3. **Cero emojis en la UI.** La marca se sostiene con tipografía y color, no con caritas.
 4. **Tutea, con calma.** MDNotes es tu cuaderno, no una empresa que te habla.
@@ -200,7 +240,7 @@ en la interfaz. La calidez viene de la claridad, no de la efusividad.
 
 ---
 
-## 07 · Créditos
+## 08 · Créditos
 
 **Diseñado por charlsdev** — Carlos A. Villacreses · Full Stack Developer
 
@@ -211,11 +251,11 @@ merece un buen diseño. La atribución "por charlsdev" (→ charlsdev.xyz) es fi
 
 | | |
 |---|---|
-| **Versión** | 1.0 |
+| **Versión** | 1.1 |
 | **Año** | 2026 |
 | **Autor** | charlsdev (Carlos A. Villacreses) |
 | **Producto** | MDNotes |
 
 ---
 
-*MDNotes · Brand Book · v1.0 · 2026 · by charlsdev*
+*MDNotes · Brand Book · v1.1 · 2026 · by charlsdev*
