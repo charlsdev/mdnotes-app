@@ -2,7 +2,7 @@
 
 App móvil para leer, escribir y previsualizar Markdown. Editorial, offline-first,
 con **vault**: abres una carpeta del teléfono y editas los `.md` reales en sitio
-(tipo Obsidian/Typora). Tus archivos son tuyos.
+inspirado en Typora. Tus archivos son tuyos.
 
 > Tagline: **Notas y Markdown**
 
@@ -49,13 +49,15 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Guardado configurable**: autoguardado (con indicador "Guardando…/Guardado") o manual
   con botón "Guardar". Se elige en Ajustes.
 - **Editor de 3 modos** (toggle VIVO/MD/VER):
-  - **VIVO** — WYSIWYG tipo Typora (Milkdown Crepe): editas sobre el documento renderizado,
+  - **VIVO** — WYSIWYG inspirado en Typora (Milkdown Crepe): editas sobre el documento renderizado,
     con callouts de color, imágenes, tablas, código, mates.
   - **MD** — Markdown crudo + toolbar (H1–H6, negrita/cursiva/tachado/resaltado/limpiar,
     listas, checkbox, cita, código, tabla, callout, ecuación, imagen, link, regla).
   - **VER** — preview de solo lectura (WebView) con **callouts de color** (estilo GitHub),
     **KaTeX** (offline), **resaltado de sintaxis**, footnotes, tablas e imágenes (galería y
     **locales del vault** `./img/x.png`). Mismo motor que el **PDF**.
+- **Tags editables** desde el editor (chips), guardados en **frontmatter YAML** (`---\ntags: [..]\n---`);
+  también se derivan `#hashtags` del cuerpo. Portable (Obsidian). **Filtro por tag** en la biblioteca.
 - Saltar de una nota a otra desde el editor (cajón ☰) sin volver a la biblioteca.
 - Exportar a **PDF** (A4, **margen configurable**) y compartir el `.md` crudo.
 - **Ajustes** (⚙): autoguardado y margen del PDF. Búsqueda en contenido. Claro/oscuro automático.
@@ -74,7 +76,5 @@ pwsh -File .\build-and-install.ps1 -Prebuild   # regenera android/ + gradle + ad
 
 ## Próximos pasos
 
-- [ ] Tags editables desde el editor (hoy se derivan de `#tag`)
-- [ ] Callouts en VIVO con el marcador oculto también durante la edición (pulido)
 - [ ] Integración real con Google Drive (OAuth) para editar en la nube — grande
 ```

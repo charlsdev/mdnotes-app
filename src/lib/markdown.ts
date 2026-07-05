@@ -8,6 +8,7 @@ import taskListsPlugin from 'markdown-it-task-lists';
 import * as katexMod from '@vscode/markdown-it-katex';
 import hljs from 'highlight.js/lib/common';
 import { KATEX_CSS } from './katex-css';
+import { stripFrontmatter } from './frontmatter';
 
 const katexPlugin: any = (katexMod as any).default ?? katexMod;
 
@@ -105,7 +106,7 @@ export function unescapeAlerts(markdown: string): string {
 }
 
 export function mdToBody(markdown: string): string {
-  return md.render(unescapeAlerts(markdown));
+  return md.render(stripFrontmatter(unescapeAlerts(markdown)));
 }
 
 interface Palette {

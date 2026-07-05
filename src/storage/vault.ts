@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MdFile } from '@/types';
-import { extractTags } from '@/utils/text';
+import { computeTags } from '@/utils/text';
 
 const VAULT_KEY = 'mdnotes:vault-uri';
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
@@ -114,7 +114,7 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
             content,
             createdAt: now,
             updatedAt: now,
-            tags: extractTags(content),
+            tags: computeTags(content),
             folder: rel,
           });
         } catch (e: any) {

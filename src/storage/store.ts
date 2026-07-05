@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { MdFile } from '@/types';
 import * as FilesAPI from '@/storage/files';
 import * as Vault from '@/storage/vault';
-import { extractTags } from '@/utils/text';
+import { computeTags } from '@/utils/text';
 
 interface FilesState {
   files: MdFile[];
@@ -21,7 +21,7 @@ interface FilesState {
   createWith: (name: string, content: string) => Promise<MdFile>;
 }
 
-const STARTER = '# Nueva nota\n\nEscribe en Markdown. Alterna EDIT / VIEW arriba a la derecha.';
+const STARTER = '# Nueva nota\n\nEscribe en Markdown. Alterna VIVO / MD / VER arriba a la derecha.';
 
 const byRecent = (a: MdFile, b: MdFile) => b.updatedAt - a.updatedAt;
 
@@ -151,7 +151,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
         content,
         createdAt: now,
         updatedAt: now,
-        tags: extractTags(content),
+        tags: computeTags(content),
       };
       set({ files: [file, ...get().files] });
       return file;
@@ -162,7 +162,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       content,
       createdAt: now,
       updatedAt: now,
-      tags: extractTags(content),
+      tags: computeTags(content),
     };
     await FilesAPI.saveFile(file);
     set({ files: [file, ...get().files] });

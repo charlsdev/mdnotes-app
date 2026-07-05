@@ -9,6 +9,7 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -50,18 +51,27 @@ export default function LibraryScreen() {
   const { files, loaded, loading, load, create, createWith, remove, vaultUri, vaultName, openVault, closeVault } =
     useFilesStore();
   const [query, setQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loaded) load();
   }, [loaded]);
 
+  // Todos los tags únicos (para la barra de filtro).
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of files) f.tags?.forEach((t) => set.add(t));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [files]);
+
   const filtered = useMemo(() => {
-    if (!query.trim()) return files;
-    const q = query.toLowerCase();
-    return files.filter(
-      (f) => f.name.toLowerCase().includes(q) || f.content.toLowerCase().includes(q)
-    );
-  }, [files, query]);
+    const q = query.trim().toLowerCase();
+    return files.filter((f) => {
+      if (tagFilter && !f.tags?.includes(tagFilter)) return false;
+      if (q && !f.name.toLowerCase().includes(q) && !f.content.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [files, query, tagFilter]);
 
   const handleCreate = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -188,6 +198,33 @@ export default function LibraryScreen() {
           autoCorrect={false}
         />
       </View>
+      {allTags.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.tagFilterRow}
+        >
+          {allTags.map((t) => {
+            const active = t === tagFilter;
+            return (
+              <Pressable
+                key={t}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setTagFilter(active ? null : t);
+                }}
+                style={[
+                  styles.tagFilterChip,
+                  { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent : 'transparent' },
+                ]}
+              >
+                <Text style={[styles.tagFilterText, { color: active ? '#f5f1ea' : theme.sepia }]}>#{t}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 
@@ -344,6 +381,9 @@ const styles = StyleSheet.create({
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   searchInput: { flex: 1, fontSize: 14, fontFamily: fonts.sans },
+  tagFilterRow: { gap: 6, paddingTop: spacing.md, paddingRight: spacing.sm },
+  tagFilterChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full, borderWidth: 1 },
+  tagFilterText: { fontFamily: fonts.mono, fontSize: 11 },
   fileItem: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,

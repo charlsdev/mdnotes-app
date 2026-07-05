@@ -28,7 +28,9 @@ import { appAlert } from '@/components/AppAlert';
 import { mdToHtml, unescapeAlerts } from '@/lib/markdown';
 import { readImageDataUri } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
-import { deriveName, extractTags } from '@/utils/text';
+import { deriveName, computeTags } from '@/utils/text';
+import { splitFrontmatter, stripFrontmatter, getFrontmatterTags, setFrontmatterTags } from '@/lib/frontmatter';
+import { TagsBar } from '@/components/TagsBar';
 
 type SaveState = 'saved' | 'saving' | 'dirty';
 
@@ -82,7 +84,8 @@ export default function EditorScreen() {
     }
     let alive = true;
     setLiveMd(null);
-    inlineLocalImages(content, file?.folder ?? '', vaultImages).then(({ md, restore }) => {
+    // El frontmatter (tags) NO va a Crepe (lo mostraría raro); se preserva al guardar.
+    inlineLocalImages(stripFrontmatter(content), file?.folder ?? '', vaultImages).then(({ md, restore }) => {
       if (!alive) return;
       imgRestore.current = restore;
       // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
@@ -99,16 +102,27 @@ export default function EditorScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id, file?.folder, vaultImages]);
 
-  // Cambio desde VIVO: (1) des-escapa los marcadores de alerta que Crepe escapa
-  // (`\[!NOTE]` → `[!NOTE]`) para no romper VER; (2) restaura las rutas originales
-  // de imagen antes de guardar.
+  // Ref al contenido actual (para leer el frontmatter al guardar desde VIVO).
+  const contentRef = useRef(content);
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
+  // Cambio desde VIVO: (1) des-escapa alertas, quita `<br />`, restaura imágenes;
+  // (2) re-antepone el frontmatter (tags) que Crepe no maneja.
   const onLiveChange = useCallback((md: string) => {
-    let restored = md
-      .replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1') // des-escapa alertas
-      .replace(/<br\s*\/?>\n?/gi, ''); // quita los <br /> que mete Crepe
-    for (const [dataUri, ref] of imgRestore.current) restored = restored.split(dataUri).join(ref);
-    setContent(restored);
+    let body = md
+      .replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1')
+      .replace(/<br\s*\/?>\n?/gi, '');
+    for (const [dataUri, ref] of imgRestore.current) body = body.split(dataUri).join(ref);
+    const fm = splitFrontmatter(contentRef.current).fm;
+    setContent(fm + body);
   }, []);
+
+  // Tags editables (en el frontmatter del contenido).
+  const tags = getFrontmatterTags(content);
+  const addTag = (t: string) => setContent(setFrontmatterTags(content, [...tags, t]));
+  const removeTag = (t: string) => setContent(setFrontmatterTags(content, tags.filter((x) => x !== t)));
 
   const inputRef = useRef<TextInput>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,7 +148,7 @@ export default function EditorScreen() {
       content,
       // Nota de carpeta (vault): el nombre = nombre del archivo, no se re-deriva.
       name: file.uri ? file.name : deriveName(content),
-      tags: extractTags(content),
+      tags: computeTags(content),
       updatedAt: Date.now(),
     };
     upsert(updated);
@@ -321,6 +335,8 @@ export default function EditorScreen() {
         <SaveIndicator state={saveState} autosave={autosave} onSave={handleManualSave} theme={theme} />
         <ModeToggle mode={mode} onChange={setMode} />
       </View>
+
+      <TagsBar tags={tags} onAdd={addTag} onRemove={removeTag} />
 
       <NoteTreeDrawer
         visible={drawerOpen}

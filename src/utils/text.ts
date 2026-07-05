@@ -1,5 +1,6 @@
 import { formatDistanceToNowStrict } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { stripFrontmatter, getFrontmatterTags } from '@/lib/frontmatter';
 
 export function relativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -11,7 +12,7 @@ export function relativeTime(timestamp: number): string {
 }
 
 export function preview(text: string, max = 120): string {
-  const stripped = text
+  const stripped = stripFrontmatter(text)
     .replace(/^#+\s+/gm, '')
     .replace(/\*\*|\*|`|>/g, '')
     .replace(/\n+/g, ' ')
@@ -20,17 +21,19 @@ export function preview(text: string, max = 120): string {
 }
 
 export function deriveName(content: string): string {
-  const firstLine = content.split('\n').find((l) => l.trim().length > 0) ?? '';
+  const body = stripFrontmatter(content);
+  const firstLine = body.split('\n').find((l) => l.trim().length > 0) ?? '';
   return firstLine.replace(/^#+\s*/, '').slice(0, 60) || 'Sin título';
 }
 
-// Extrae tags tipo #tag del contenido (para mostrarlos en la lista).
+// Extrae tags tipo #tag del cuerpo (para mostrarlos en la lista).
 export function extractTags(content: string): string[] {
-  const matches = content.match(/(?:^|\s)#([a-zA-Z0-9_\-áéíóúñ]+)/gi) ?? [];
-  const tags = matches
-    .map((m) => m.trim().replace(/^#/, ''))
-    // Descarta encabezados markdown (# al inicio de línea seguido de espacio ya
-    // fue consumido arriba; aquí solo quedan hashtags reales).
-    .filter((t) => t.length > 0 && t.length <= 24);
-  return Array.from(new Set(tags)).slice(0, 4);
+  const matches = stripFrontmatter(content).match(/(?:^|\s)#([a-zA-Z0-9_\-áéíóúñ]+)/gi) ?? [];
+  const tags = matches.map((m) => m.trim().replace(/^#/, '')).filter((t) => t.length > 0 && t.length <= 24);
+  return Array.from(new Set(tags));
+}
+
+// Tags de la nota: frontmatter (editables) + hashtags del cuerpo. Para mostrar/buscar.
+export function computeTags(content: string): string[] {
+  return Array.from(new Set([...getFrontmatterTags(content), ...extractTags(content)])).slice(0, 6);
 }
