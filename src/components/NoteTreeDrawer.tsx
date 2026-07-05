@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, StyleSheet, StatusBar, Platform } from 'react-native';
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { MdFile } from '@/types';
 import { NoteTree } from './NoteTree';
@@ -27,6 +27,11 @@ export function NoteTreeDrawer({
   const theme = useTheme();
   const [query, setQuery] = useState('');
 
+  // En Android StatusBar.currentHeight es lo más fiable dentro de un Modal
+  // translúcido; combinamos con el inset por si el status bar es más alto.
+  const androidStatusBar = Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0;
+  const padTop = Math.max(topInset, androidStatusBar) + spacing.xs;
+
   const filtered = useMemo(() => {
     if (!query.trim()) return notes;
     const q = query.toLowerCase();
@@ -39,7 +44,7 @@ export function NoteTreeDrawer({
         <View
           style={[
             styles.panel,
-            { backgroundColor: theme.bg, borderRightColor: theme.line, paddingTop: topInset, paddingBottom: bottomInset },
+            { backgroundColor: theme.bg, borderRightColor: theme.line, paddingTop: padTop, paddingBottom: bottomInset },
           ]}
         >
           <View style={[styles.head, { borderBottomColor: theme.line }]}>

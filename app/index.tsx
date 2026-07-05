@@ -195,9 +195,6 @@ export default function LibraryScreen() {
       <View style={[styles.topBar, { borderBottomColor: theme.line }]}>
         <Wordmark size={19} />
         <View style={styles.topRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')}>
-            <GearIcon color={theme.muted} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.openBtn,
@@ -213,11 +210,8 @@ export default function LibraryScreen() {
               {vaultUri ? vaultName : 'Abrir carpeta'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.topAction, { backgroundColor: theme.ink }]}
-            onPress={handleCreate}
-          >
-            <Text style={{ color: theme.bg, fontSize: 20, fontWeight: '300' }}>+</Text>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')}>
+            <GearIcon color={theme.muted} />
           </TouchableOpacity>
         </View>
       </View>
@@ -330,13 +324,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   openText: { fontFamily: fonts.monoMedium, fontSize: 11, letterSpacing: 0.5, flexShrink: 1 },
-  topAction: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   hero: { padding: spacing.xl, borderBottomWidth: 1 },
   heroLabel: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 2.5 },
   heroTitle: {
