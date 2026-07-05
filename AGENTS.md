@@ -12,7 +12,7 @@
 - **react-native-webview** — render del preview (VER) **y** del editor WYSIWYG (VIVO)
 - **react-native-keyboard-controller** — teclado (como daemoni)
 - **@expo-google-fonts** — Fraunces (display), Inter Tight (UI), JetBrains Mono (editor)
-- Export/compartir: expo-print + expo-sharing · Imágenes: expo-image-picker
+- Export/compartir: expo-print + expo-sharing · Imágenes: expo-image-picker + expo-image-manipulator (resize)
 - Preview (VER): markdown-it + plugins (mark, footnote, task-lists, `@vscode/markdown-it-katex`)
   + **highlight.js** (resaltado de sintaxis)
 - **Editor WYSIWYG (VIVO)**: **Milkdown Crepe** bundleado offline (proyecto aparte `webeditor/`)
@@ -27,11 +27,11 @@ app/
   settings.tsx       Ajustes: autoguardado (on/off) + margen del PDF
 src/
   components/         EditorToolbar, ModeToggle, MarkdownPreview (VER), MarkdownWysiwyg (VIVO),
-                     NoteTree, NoteTreeDrawer, AppAlert, Footer, CharlsdevMark, Wordmark
+                     NoteTree, NoteTreeDrawer, TagsBar, AppAlert, Footer, CharlsdevMark, Wordmark
   storage/           files.ts (notas internas) · vault.ts (carpeta SAF) · store.ts (Zustand)
-                     · settings.ts (ajustes: pdfMarginMm, autosave — AsyncStorage)
+                     · settings.ts (ajustes: pdfMarginMm, autosave, theme, readingScale/Font)
   lib/               markdown.ts (mdToHtml, compartido VER/PDF) · katex-css.ts (GENERADO)
-                     · tree.ts (buildTreeRows)
+                     · tree.ts (buildTreeRows) · frontmatter.ts (tags YAML)
   theme/             Paleta de marca + fuentes + tokens
   types/  utils/
 assets/              icon, icon-dark, adaptive-icon, splash(*), favicon, webeditor.html (GENERADO)
@@ -111,11 +111,12 @@ round-trip del parámetro (→ editor con spinner infinito). Por eso:
 - **KaTeX offline**: `src/lib/katex-css.ts` es un archivo **AUTO-GENERADO** (~360 KB)
   con las fuentes woff2 embebidas en base64. Regenéralo con
   `node scripts/gen-katex-css.mjs` si actualizas `katex`. No lo edites a mano.
-- **Márgenes del PDF**: expo-print NO pone márgenes solo. `mdToHtml(md, 'pdf', {pdfMarginMm})`
-  los aplica como **padding del body** (`@page margin: 0` quita el default de la impresora).
-  El valor sale de los ajustes.
-- **Imágenes de galería** (toolbar 🖼): se insertan como **data URI base64** en el `.md`
-  (portable, sin resize aún).
+- **Márgenes del PDF**: `mdToHtml(md, 'pdf', {pdfMarginMm})` usa **`@page { margin }`** (aplica en
+  TODAS las páginas; el padding del body solo separaba la 1ª). Valor desde ajustes. Además, en PDF
+  se agregan `break-inside: avoid` (callouts, código, tablas, imágenes) y `break-after: avoid` en
+  títulos para que no se corten entre páginas.
+- **Imágenes de galería** (toolbar 🖼): se **redimensionan** (máx 1400px) y comprimen con
+  **expo-image-manipulator** antes de embeberlas como **data URI JPEG** en el `.md` (mucho más liviano).
 - **Imágenes locales del vault** (`![](./img/x.png)` o `<img src>`): el escaneo indexa las
   imágenes (`VaultScan.images`: relPath→uri) y el editor las resuelve a data URI antes del
   preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
@@ -156,6 +157,11 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   paleta de marca + arregla: ancho del contenido (default de Crepe es angostísimo), menú
   slash (z-index/sombra/compacto), control de bloque `+`/⠿ (`left: 8px !important`, Crepe lo
   manda fuera de pantalla), línea activa de CodeMirror (quita el cuadrito), tamaño de imagen.
+- **GOTCHA tema oscuro VIVO**: Crepe define las `--crepe-color-*` en **`.milkdown`** (no en `:root`).
+  Los overrides de tema DEBEN ir en `.milkdown` (claro) y `body.dark .milkdown` (oscuro) para ganar
+  especificidad — si van en `:root`/`body.dark` NO llegan al editor y VIVO se queda claro aunque el
+  tema sea oscuro. El fondo de `html,body` va explícito (fuera de `.milkdown` no resuelven las vars).
+  El tema se manda por el bridge `setTheme` (VIVO sigue el tema de la app).
 
 ## UI
 
@@ -169,8 +175,17 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   `switchTo` hace `flushSave()` (guarda lo pendiente) + `router.replace(...)`. El editor
   recarga al cambiar `id` (ref `loadedId`).
 - **Ajustes** (`app/settings.tsx`, engrane ⚙ en la biblioteca): store `settings.ts`
-  (zustand + AsyncStorage `mdnotes:settings`, cargado en `_layout`). Margen del PDF +
-  autoguardado on/off.
+  (zustand + AsyncStorage `mdnotes:settings`, cargado en `_layout`). Opciones: margen del PDF,
+  autoguardado, **tema** (`system|light|dark` → `useEffectiveScheme()` en `src/theme`, respetado
+  por `useTheme`/`_layout`/`MarkdownPreview`), **tamaño de lectura** (`readingScale` → font-size
+  en VER `mdToHtml(..,{scale})`, editor MD, y VIVO via bridge `setScale`), **fuente de lectura**
+  (`readingFont` sans/serif/mono → solo VER, `mdToHtml(..,{fontStack})`).
+- **Tags** (`src/lib/frontmatter.ts`): editables desde `TagsBar.tsx` (chips), guardados en
+  **frontmatter YAML** (`---\ntags: [a,b]\n---`). `computeTags(content)` = frontmatter ∪ `#hashtags`
+  del cuerpo. Filtro por tag en la biblioteca (`tagFilter`, barra en el hero). **GOTCHAS**:
+  `mdToBody`/`deriveName`/`preview` hacen `stripFrontmatter` (si no, el `---` se renderiza/muestra
+  como título); en VIVO se pasa `stripFrontmatter(content)` a Crepe y `onLiveChange` re-antepone
+  el frontmatter (`contentRef` + `splitFrontmatter().fm`) para no perder los tags al guardar.
 - **Guardado**: el editor tiene `SaveState` (saved/saving/dirty) + `SaveIndicator` en el
   topbar. Autosave ON → debounce 600ms, muestra "Guardando…"/"Guardado". Autosave OFF →
   botón "Guardar" cuando hay cambios; igual guarda al salir (`goBack`) y al saltar de nota

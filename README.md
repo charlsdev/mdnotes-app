@@ -12,7 +12,7 @@ inspirado en Typora. Tus archivos son tuyos.
 - **TypeScript** estricto · **Zustand** (estado, vault-aware) · **expo-file-system** + AsyncStorage
 - **react-native-webview** + **markdown-it** + **KaTeX** + **highlight.js** (preview VER y PDF)
 - **Milkdown Crepe** (editor WYSIWYG VIVO, bundleado offline en `webeditor/`)
-- **react-native-keyboard-controller** (teclado) · **expo-image-picker** (imágenes)
+- **react-native-keyboard-controller** (teclado) · **expo-image-picker** + **expo-image-manipulator** (imágenes)
 - **expo-print** + **expo-sharing** (exportar/compartir)
 - Fuentes: **Fraunces** / **Inter Tight** / **JetBrains Mono** vía `@expo-google-fonts/*`
 
@@ -59,8 +59,10 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Tags editables** desde el editor (chips), guardados en **frontmatter YAML** (`---\ntags: [..]\n---`);
   también se derivan `#hashtags` del cuerpo. Portable (Obsidian). **Filtro por tag** en la biblioteca.
 - Saltar de una nota a otra desde el editor (cajón ☰) sin volver a la biblioteca.
-- Exportar a **PDF** (A4, **margen configurable**) y compartir el `.md` crudo.
-- **Ajustes** (⚙): autoguardado y margen del PDF. Búsqueda en contenido. Claro/oscuro automático.
+- Exportar a **PDF** (A4, **margen configurable**, sin cortar bloques entre páginas) y compartir el `.md`.
+- **Imágenes** de galería redimensionadas/comprimidas antes de insertarlas (data URI liviano).
+- **Ajustes** (⚙): **tema** (sistema/claro/oscuro), **tamaño** y **fuente** de lectura, autoguardado,
+  margen del PDF. Búsqueda en contenido.
 
 ## Correr / probar
 
