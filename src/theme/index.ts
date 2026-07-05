@@ -1,4 +1,5 @@
 import { useColorScheme } from 'react-native';
+import { useSettings } from '@/storage/settings';
 
 // Paleta oficial del brand book (brand.md). Bermellón es el ÚNICO acento.
 export const lightTheme = {
@@ -58,7 +59,14 @@ export const radius = {
   full: 999,
 };
 
+// Esquema efectivo: respeta la preferencia de tema del usuario (o el sistema).
+export function useEffectiveScheme(): 'light' | 'dark' {
+  const system = useColorScheme();
+  const pref = useSettings((s) => s.theme);
+  if (pref === 'light' || pref === 'dark') return pref;
+  return system === 'dark' ? 'dark' : 'light';
+}
+
 export function useTheme(): Theme {
-  const scheme = useColorScheme();
-  return scheme === 'dark' ? darkTheme : lightTheme;
+  return useEffectiveScheme() === 'dark' ? darkTheme : lightTheme;
 }

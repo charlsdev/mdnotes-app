@@ -12,10 +12,12 @@ export function MarkdownWysiwyg({
   noteId,
   initialMarkdown,
   onChange,
+  scale = 1,
 }: {
   noteId: string;
   initialMarkdown: string;
   onChange: (md: string) => void;
+  scale?: number;
 }) {
   const theme = useTheme();
   const dark = theme.bg === '#12100e';
@@ -25,7 +27,8 @@ export function MarkdownWysiwyg({
 
   // Contenido inicial (solo la primera carga; los cambios de nota van por setContent).
   const initialInject = useMemo(
-    () => `window.__MD__=${JSON.stringify(initialMarkdown)};window.__DARK__=${dark ? 'true' : 'false'};true;`,
+    () =>
+      `window.__MD__=${JSON.stringify(initialMarkdown)};window.__DARK__=${dark ? 'true' : 'false'};window.__SCALE__=${Math.round(15 * scale)};true;`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -55,6 +58,10 @@ export function MarkdownWysiwyg({
       `window.MDNOTES&&window.MDNOTES.setTheme(${JSON.stringify(dark ? 'dark' : 'light')});true;`
     );
   }, [dark]);
+
+  useEffect(() => {
+    webRef.current?.injectJavaScript(`window.MDNOTES&&window.MDNOTES.setScale(${Math.round(15 * scale)});true;`);
+  }, [scale]);
 
   if (!uri) {
     return (

@@ -3,13 +3,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTheme, fonts, spacing, radius } from '@/theme';
-import { useSettings, PDF_MARGINS } from '@/storage/settings';
+import { useSettings, PDF_MARGINS, THEME_OPTIONS, READING_SIZES, READING_FONTS } from '@/storage/settings';
 import { Footer } from '@/components/Footer';
 
 export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { pdfMarginMm, autosave, setPdfMargin, setAutosave } = useSettings();
+  const {
+    pdfMarginMm,
+    autosave,
+    theme: themePref,
+    readingScale,
+    readingFont,
+    setPdfMargin,
+    setAutosave,
+    setTheme,
+    setReadingScale,
+    setReadingFont,
+  } = useSettings();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
@@ -22,6 +33,78 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Apariencia */}
+        <Text style={[styles.section, { color: theme.accent }]}>— TEMA</Text>
+        <View style={styles.options}>
+          {THEME_OPTIONS.map((opt) => {
+            const active = opt.value === themePref;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setTheme(opt.value);
+                }}
+                style={[
+                  styles.opt,
+                  { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent + '14' : 'transparent' },
+                ]}
+              >
+                <Text style={[styles.optLabel, { color: active ? theme.accent : theme.ink }]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Lectura: tamaño */}
+        <Text style={[styles.section, { color: theme.accent }]}>— TAMAÑO DE LECTURA</Text>
+        <View style={styles.options}>
+          {READING_SIZES.map((opt) => {
+            const active = opt.scale === readingScale;
+            return (
+              <Pressable
+                key={opt.scale}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setReadingScale(opt.scale);
+                }}
+                style={[
+                  styles.opt,
+                  { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent + '14' : 'transparent' },
+                ]}
+              >
+                <Text style={[styles.optLabel, { color: active ? theme.accent : theme.ink }]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Lectura: fuente */}
+        <Text style={[styles.section, { color: theme.accent }]}>— FUENTE DE LECTURA</Text>
+        <View style={styles.options}>
+          {READING_FONTS.map((opt) => {
+            const active = opt.value === readingFont;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setReadingFont(opt.value);
+                }}
+                style={[
+                  styles.opt,
+                  { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent + '14' : 'transparent' },
+                ]}
+              >
+                <Text style={[styles.optLabel, { color: active ? theme.accent : theme.ink }]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[styles.note, { color: theme.muted }]}>
+          El tamaño se aplica al editor y a la vista; la fuente, a la vista (VER).
+        </Text>
+
         {/* Guardado */}
         <Text style={[styles.section, { color: theme.accent }]}>— GUARDADO</Text>
         <View style={[styles.row, { borderBottomColor: theme.line }]}>

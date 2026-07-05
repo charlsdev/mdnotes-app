@@ -74,8 +74,7 @@ pwsh -File .\build-and-install.ps1 -Prebuild   # regenera android/ + gradle + ad
 
 ## Próximos pasos
 
-- [ ] Redimensionar imágenes antes de insertarlas (hoy van base64 sin resize)
-- [ ] Tags editables · resaltado de sintaxis en bloques de código
-- [ ] Ajustes: fuente, tamaño, tema
-- [ ] Integración real con Google Drive (OAuth) para editar en la nube
+- [ ] Tags editables desde el editor (hoy se derivan de `#tag`)
+- [ ] Callouts en VIVO con el marcador oculto también durante la edición (pulido)
+- [ ] Integración real con Google Drive (OAuth) para editar en la nube — grande
 ```

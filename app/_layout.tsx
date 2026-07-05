@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, View } from 'react-native';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -22,11 +22,12 @@ import { useFonts } from 'expo-font';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { AlertProvider } from '@/components/AppAlert';
 import { useSettings } from '@/storage/settings';
+import { useEffectiveScheme } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
+  const scheme = useEffectiveScheme();
   const [loaded, error] = useFonts({
     Fraunces_400Regular_Italic,
     Fraunces_500Medium,

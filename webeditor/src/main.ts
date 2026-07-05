@@ -12,9 +12,11 @@ declare global {
   interface Window {
     __MD__?: string;
     __DARK__?: boolean;
+    __SCALE__?: number;
     MDNOTES: {
       setContent: (md: string) => void;
       setTheme: (t: 'light' | 'dark') => void;
+      setScale: (px: number) => void;
     };
     ReactNativeWebView?: { postMessage: (s: string) => void };
   }
@@ -29,6 +31,17 @@ let dark = !!window.__DARK__;
 
 function applyTheme() {
   document.body.classList.toggle('dark', dark);
+}
+
+// Escala el tamaño de fuente del editor (px del cuerpo del ProseMirror).
+function applyScale(px: number) {
+  let s = document.getElementById('mdn-scale');
+  if (!s) {
+    s = document.createElement('style');
+    s.id = 'mdn-scale';
+    document.head.appendChild(s);
+  }
+  s.textContent = `.milkdown .ProseMirror{font-size:${px}px;}`;
 }
 
 async function mount(md: string) {
@@ -65,7 +78,9 @@ window.MDNOTES = {
     dark = t === 'dark';
     applyTheme();
   },
+  setScale: (px) => applyScale(px),
 };
 
 applyTheme();
+applyScale(window.__SCALE__ ?? 15);
 void mount(window.__MD__ ?? '');

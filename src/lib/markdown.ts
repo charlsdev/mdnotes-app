@@ -136,7 +136,14 @@ function alertColors(isDark: boolean) {
     : { note: '#0969da', tip: '#1a7f37', important: '#8250df', warning: '#9a6700', caution: '#d1242f' };
 }
 
-function pageCss(p: Palette, isDark: boolean, forPdf: boolean, marginMm: number): string {
+function pageCss(
+  p: Palette,
+  isDark: boolean,
+  forPdf: boolean,
+  marginMm: number,
+  scale: number,
+  fontStack: string
+): string {
   const a = alertColors(isDark);
   const alertBlock = (name: keyof ReturnType<typeof alertColors>, cls: string) => `
     blockquote.gh-alert-${cls} { border-left-color: ${a[name]}; background: ${a[name]}22; }
@@ -146,12 +153,13 @@ function pageCss(p: Palette, isDark: boolean, forPdf: boolean, marginMm: number)
   const pageRule = forPdf ? `@page { size: A4; margin: 0; }` : '';
   const bodyPad = forPdf ? `${marginMm}mm` : '20px 18px 60px';
   const bodyBg = forPdf ? '#ffffff' : p.bg;
+  const fontPx = Math.round(16 * scale);
   return `
     ${pageRule}
     :root { color-scheme: ${isDark ? 'dark' : 'light'}; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: ${bodyPad}; background: ${bodyBg}; color: ${p.ink};
-      font-family: -apple-system, Roboto, system-ui, sans-serif; font-size: 16px; line-height: 1.65;
+      font-family: ${fontStack}; font-size: ${fontPx}px; line-height: 1.65;
       -webkit-text-size-adjust: 100%; word-wrap: break-word; overflow-wrap: break-word; }
     h1,h2,h3,h4,h5,h6 { font-family: Georgia, 'Times New Roman', serif; line-height: 1.25; margin: 1.4em 0 .5em; letter-spacing: -0.3px; }
     h1 { font-size: 1.9em; } h2 { font-size: 1.5em; } h3 { font-size: 1.25em; }
@@ -199,21 +207,24 @@ function pageCss(p: Palette, isDark: boolean, forPdf: boolean, marginMm: number)
 }
 
 // HTML completo y autónomo. `mode` decide la paleta; 'pdf' usa siempre claro.
+const DEFAULT_FONT = `-apple-system, Roboto, system-ui, sans-serif`;
+
 export function mdToHtml(
   markdown: string,
   mode: 'light' | 'dark' | 'pdf' = 'light',
-  opts: { pdfMarginMm?: number } = {}
+  opts: { pdfMarginMm?: number; scale?: number; fontStack?: string } = {}
 ): string {
   const isDark = mode === 'dark';
   const forPdf = mode === 'pdf';
   const p = isDark ? DARK : LIGHT;
+  const css = pageCss(p, isDark, forPdf, opts.pdfMarginMm ?? 12, opts.scale ?? 1, opts.fontStack ?? DEFAULT_FONT);
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <style>${KATEX_CSS}</style>
-<style>${pageCss(p, isDark, forPdf, opts.pdfMarginMm ?? 12)}</style>
+<style>${css}</style>
 </head>
 <body>${mdToBody(markdown)}</body>
 </html>`;

@@ -15,6 +15,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useTheme, fonts, spacing, type Theme } from '@/theme';
 import { useFilesStore } from '@/storage/store';
 import { MdFile, EditorMode } from '@/types';
@@ -43,6 +44,7 @@ export default function EditorScreen() {
   const insets = useSafeAreaInsets();
   const autosave = useSettings((s) => s.autosave);
   const pdfMarginMm = useSettings((s) => s.pdfMarginMm);
+  const readingScale = useSettings((s) => s.readingScale);
   const { files, upsert, remove, vaultImages } = useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
@@ -230,18 +232,21 @@ export default function EditorScreen() {
     });
   };
 
-  // Inserta una imagen de la galería como data URI (portable dentro del .md).
+  // Inserta una imagen de la galería como data URI. Antes de embeberla la
+  // redimensiona (máx ~1400px) y comprime → el .md queda mucho más liviano.
   const handleImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.5,
-      base64: true,
-    });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
     if (res.canceled) return;
     const asset = res.assets[0];
-    if (!asset?.base64) return;
-    const mime = asset.mimeType || 'image/jpeg';
-    onInsert(`\n![imagen](data:${mime};base64,${asset.base64})\n`);
+    if (!asset?.uri) return;
+    const actions = asset.width && asset.width > 1400 ? [{ resize: { width: 1400 } }] : [];
+    const out = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+      compress: 0.6,
+      format: ImageManipulator.SaveFormat.JPEG,
+      base64: true,
+    });
+    if (!out.base64) return;
+    onInsert(`\n![imagen](data:image/jpeg;base64,${out.base64})\n`);
   };
 
   const handleShareMd = async () => {
@@ -339,13 +344,16 @@ export default function EditorScreen() {
               <ActivityIndicator color={theme.accent} />
             </View>
           ) : (
-            <MarkdownWysiwyg noteId={id ?? ''} initialMarkdown={liveMd} onChange={onLiveChange} />
+            <MarkdownWysiwyg noteId={id ?? ''} initialMarkdown={liveMd} onChange={onLiveChange} scale={readingScale} />
           )
         ) : mode === 'code' ? (
           <>
             <TextInput
               ref={inputRef}
-              style={[styles.editor, { color: theme.ink, fontFamily: fonts.mono }]}
+              style={[
+                styles.editor,
+                { color: theme.ink, fontFamily: fonts.mono, fontSize: Math.round(15 * readingScale) },
+              ]}
               multiline
               value={content}
               onChangeText={setContent}
