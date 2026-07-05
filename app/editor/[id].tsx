@@ -24,7 +24,7 @@ import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownWysiwyg } from '@/components/MarkdownWysiwyg';
 import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
-import { mdToHtml } from '@/lib/markdown';
+import { mdToHtml, unescapeAlerts } from '@/lib/markdown';
 import { readImageDataUri } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
 import { deriveName, extractTags } from '@/utils/text';
@@ -83,9 +83,13 @@ export default function EditorScreen() {
     inlineLocalImages(content, file?.folder ?? '', vaultImages).then(({ md, restore }) => {
       if (!alive) return;
       imgRestore.current = restore;
-      // Crepe NO renderiza <img> HTML (lo muestra como texto). Lo convertimos a
-      // sintaxis Markdown ![](...) para que sí muestre la imagen en VIVO.
-      setLiveMd(md.replace(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi, (_m, src) => `![](${src})`));
+      // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
+      // (2) Crepe NO renderiza <img> HTML: lo pasamos a Markdown ![](...).
+      const clean = unescapeAlerts(md).replace(
+        /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi,
+        (_m, src) => `![](${src})`
+      );
+      setLiveMd(clean);
     });
     return () => {
       alive = false;
@@ -93,9 +97,13 @@ export default function EditorScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id, file?.folder, vaultImages]);
 
-  // Cambio desde VIVO: restaura las rutas originales de imagen antes de guardar.
+  // Cambio desde VIVO: (1) des-escapa los marcadores de alerta que Crepe escapa
+  // (`\[!NOTE]` → `[!NOTE]`) para no romper VER; (2) restaura las rutas originales
+  // de imagen antes de guardar.
   const onLiveChange = useCallback((md: string) => {
-    let restored = md;
+    let restored = md
+      .replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1') // des-escapa alertas
+      .replace(/<br\s*\/?>\n?/gi, ''); // quita los <br /> que mete Crepe
     for (const [dataUri, ref] of imgRestore.current) restored = restored.split(dataUri).join(ref);
     setContent(restored);
   }, []);

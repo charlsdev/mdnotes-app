@@ -56,7 +56,9 @@ html, body { margin: 0; padding: 0; background: var(--crepe-color-background); }
   .milkdown .ProseMirror { padding: 32px 44px 160px 78px !important; }
 }
 
-/* Control de bloque (+/arrastrar) más chico para que quepa en el margen. */
+/* Control de bloque (+/arrastrar): fijado a la izquierda visible (Crepe lo pone
+   fuera de pantalla si el margen es chico) y más compacto. */
+.milkdown .milkdown-block-handle { left: 8px !important; }
 .milkdown .milkdown-block-handle .operation-item { width: 26px !important; height: 26px !important; }
 .milkdown .milkdown-block-handle .operation-item svg { width: 18px !important; height: 18px !important; }
 
@@ -77,6 +79,29 @@ html, body { margin: 0; padding: 0; background: var(--crepe-color-background); }
   padding: 4px 14px;
   font-style: normal;
 }
+/* Encabezado del callout (ícono + etiqueta) y oculta el marcador [!TYPE] */
+.milkdown .ProseMirror .gh-alert-marker { display: none; }
+.milkdown .ProseMirror .gh-alert-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.82em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.milkdown .ProseMirror .gh-alert-header svg { flex: none; }
+.milkdown .ProseMirror blockquote.gh-alert-note .gh-alert-header { color: #0969da; }
+.milkdown .ProseMirror blockquote.gh-alert-tip .gh-alert-header { color: #1a7f37; }
+.milkdown .ProseMirror blockquote.gh-alert-important .gh-alert-header { color: #8250df; }
+.milkdown .ProseMirror blockquote.gh-alert-warning .gh-alert-header { color: #9a6700; }
+.milkdown .ProseMirror blockquote.gh-alert-caution .gh-alert-header { color: #d1242f; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-note .gh-alert-header { color: #4493f8; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-tip .gh-alert-header { color: #3fb950; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-important .gh-alert-header { color: #ab7df8; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-warning .gh-alert-header { color: #d29922; }
+body.dark .milkdown .ProseMirror blockquote.gh-alert-caution .gh-alert-header { color: #f85149; }
+
 .milkdown .ProseMirror blockquote.gh-alert-note { border-left-color: #0969da; background: #0969da18; }
 .milkdown .ProseMirror blockquote.gh-alert-tip { border-left-color: #1a7f37; background: #1a7f3718; }
 .milkdown .ProseMirror blockquote.gh-alert-important { border-left-color: #8250df; background: #8250df18; }
@@ -88,8 +113,12 @@ body.dark .milkdown .ProseMirror blockquote.gh-alert-important { border-left-col
 body.dark .milkdown .ProseMirror blockquote.gh-alert-warning { border-left-color: #d29922; background: #d2992222; }
 body.dark .milkdown .ProseMirror blockquote.gh-alert-caution { border-left-color: #f85149; background: #f8514922; }
 
-/* Menú de inserción (slash) más compacto */
-.milkdown .milkdown-slash-menu .menu-groups { max-height: 300px !important; padding: 0 8px 8px !important; }
+/* Menú de inserción (slash): por encima de todo, con sombra, compacto */
+.milkdown .milkdown-slash-menu {
+  z-index: 200 !important;
+  box-shadow: 0 10px 30px -8px rgba(10, 9, 8, 0.45) !important;
+}
+.milkdown .milkdown-slash-menu .menu-groups { max-height: 240px !important; padding: 0 8px 8px !important; }
 .milkdown .milkdown-slash-menu .menu-groups .menu-group li {
   padding: 8px 10px !important;
   gap: 12px !important;

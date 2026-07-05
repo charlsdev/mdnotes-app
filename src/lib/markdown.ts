@@ -97,8 +97,15 @@ const md = new MarkdownIt({
   .use(katexPlugin)
   .use(githubAlerts);
 
+// Crepe (VIVO) escapa el corchete al guardar (`> \[!NOTE]`), lo que rompe la
+// detección de alertas. Lo des-escapamos antes de renderizar (por si el archivo
+// ya quedó así). El guardado desde VIVO también lo limpia (ver editor).
+export function unescapeAlerts(markdown: string): string {
+  return markdown.replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1');
+}
+
 export function mdToBody(markdown: string): string {
-  return md.render(markdown);
+  return md.render(unescapeAlerts(markdown));
 }
 
 interface Palette {
