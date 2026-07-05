@@ -1,24 +1,28 @@
 import { useMemo, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView, SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { MdFile } from '@/types';
 import { NoteTree } from './NoteTree';
 
 // Cajón deslizante con el árbol de notas — para saltar de un .md a otro desde
-// el editor sin volver a la biblioteca.
+// el editor sin volver a la biblioteca. Los insets se pasan como props porque el
+// Modal es una ventana aparte donde SafeAreaView no mide bien (Android).
 export function NoteTreeDrawer({
   visible,
   notes,
   currentId,
   onSelect,
   onClose,
+  topInset = 0,
+  bottomInset = 0,
 }: {
   visible: boolean;
   notes: MdFile[];
   currentId?: string;
   onSelect: (note: MdFile) => void;
   onClose: () => void;
+  topInset?: number;
+  bottomInset?: number;
 }) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -31,11 +35,13 @@ export function NoteTreeDrawer({
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      {/* El Modal es un root aparte: lleva su propio SafeAreaProvider para que el
-          panel respete el status bar (edge-to-edge). */}
-      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <View style={styles.overlay}>
-        <SafeAreaView style={[styles.panel, { backgroundColor: theme.bg, borderRightColor: theme.line }]} edges={['top', 'bottom']}>
+        <View
+          style={[
+            styles.panel,
+            { backgroundColor: theme.bg, borderRightColor: theme.line, paddingTop: topInset, paddingBottom: bottomInset },
+          ]}
+        >
           <View style={[styles.head, { borderBottomColor: theme.line }]}>
             <Text style={[styles.title, { color: theme.ink }]}>Notas</Text>
             <Text style={[styles.count, { color: theme.muted }]}>{notes.length}</Text>
@@ -58,10 +64,9 @@ export function NoteTreeDrawer({
               onClose();
             }}
           />
-        </SafeAreaView>
+        </View>
         <Pressable style={styles.scrim} onPress={onClose} />
       </View>
-      </SafeAreaProvider>
     </Modal>
   );
 }

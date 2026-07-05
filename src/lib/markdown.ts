@@ -127,17 +127,15 @@ function alertColors(isDark: boolean) {
     : { note: '#0969da', tip: '#1a7f37', important: '#8250df', warning: '#9a6700', caution: '#d1242f' };
 }
 
-function pageCss(p: Palette, isDark: boolean, forPdf: boolean): string {
+function pageCss(p: Palette, isDark: boolean, forPdf: boolean, marginMm: number): string {
   const a = alertColors(isDark);
   const alertBlock = (name: keyof ReturnType<typeof alertColors>, cls: string) => `
     blockquote.gh-alert-${cls} { border-left-color: ${a[name]}; background: ${a[name]}14; }
     blockquote.gh-alert-${cls} .gh-alert-title { color: ${a[name]}; }`;
-  // En PDF: márgenes reales de hoja A4 vía @page (expo-print no los pone solo);
-  // el body va sin padding y sin fondo para no pintar los márgenes.
-  // @page es lo correcto, pero algunos Android de expo-print lo ignoran; dejamos
-  // también un padding de body como respaldo (si @page aplica, quedan ~20mm).
-  const pageRule = forPdf ? `@page { size: A4; margin: 12mm; }` : '';
-  const bodyPad = forPdf ? '8mm 7mm' : '20px 18px 60px';
+  // El margen del PDF se aplica como padding del body (determinista en expo-print);
+  // `@page margin: 0` quita el margen por defecto de la impresora para no sumar.
+  const pageRule = forPdf ? `@page { size: A4; margin: 0; }` : '';
+  const bodyPad = forPdf ? `${marginMm}mm` : '20px 18px 60px';
   const bodyBg = forPdf ? '#ffffff' : p.bg;
   return `
     ${pageRule}
@@ -192,7 +190,11 @@ function pageCss(p: Palette, isDark: boolean, forPdf: boolean): string {
 }
 
 // HTML completo y autónomo. `mode` decide la paleta; 'pdf' usa siempre claro.
-export function mdToHtml(markdown: string, mode: 'light' | 'dark' | 'pdf' = 'light'): string {
+export function mdToHtml(
+  markdown: string,
+  mode: 'light' | 'dark' | 'pdf' = 'light',
+  opts: { pdfMarginMm?: number } = {}
+): string {
   const isDark = mode === 'dark';
   const forPdf = mode === 'pdf';
   const p = isDark ? DARK : LIGHT;
@@ -202,7 +204,7 @@ export function mdToHtml(markdown: string, mode: 'light' | 'dark' | 'pdf' = 'lig
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <style>${KATEX_CSS}</style>
-<style>${pageCss(p, isDark, forPdf)}</style>
+<style>${pageCss(p, isDark, forPdf, opts.pdfMarginMm ?? 12)}</style>
 </head>
 <body>${mdToBody(markdown)}</body>
 </html>`;

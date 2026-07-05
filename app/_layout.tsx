@@ -21,6 +21,7 @@ import {
 import { useFonts } from 'expo-font';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { AlertProvider } from '@/components/AppAlert';
+import { useSettings } from '@/storage/settings';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -35,6 +36,11 @@ export default function RootLayout() {
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
+
+  const loadSettings = useSettings((s) => s.load);
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
   useEffect(() => {
     if (loaded || error) SplashScreen.hideAsync();
@@ -57,6 +63,7 @@ export default function RootLayout() {
             >
               <Stack.Screen name="index" />
               <Stack.Screen name="editor/[id]" />
+              <Stack.Screen name="settings" />
             </Stack>
           </AlertProvider>
         </SafeAreaProvider>

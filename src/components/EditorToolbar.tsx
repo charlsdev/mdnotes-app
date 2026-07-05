@@ -9,13 +9,15 @@ interface ToolbarProps {
   onPrefix: (prefix: string) => void;
   onInsert: (text: string, cursorOffset?: number) => void;
   onImage: () => void;
+  onClear: () => void;
 }
 
 type Action =
   | { kind: 'prefix'; label: string; value: string; style?: object }
   | { kind: 'wrap'; label: string; value: string; style?: object }
   | { kind: 'insert'; label: string; value: string; offset?: number; style?: object }
-  | { kind: 'image'; label: string; style?: object };
+  | { kind: 'image'; label: string; style?: object }
+  | { kind: 'clear'; label: string; style?: object };
 
 const TABLE = '\n| Columna A | Columna B |\n| --- | --- |\n| celda | celda |\n';
 const CALLOUT = '\n> [!NOTE]\n> ';
@@ -25,10 +27,14 @@ const ACTIONS: Action[] = [
   { kind: 'prefix', label: 'H1', value: '# ', style: { fontFamily: fonts.serif } },
   { kind: 'prefix', label: 'H2', value: '## ', style: { fontFamily: fonts.serif } },
   { kind: 'prefix', label: 'H3', value: '### ', style: { fontFamily: fonts.serif } },
+  { kind: 'prefix', label: 'H4', value: '#### ', style: { fontFamily: fonts.serif } },
+  { kind: 'prefix', label: 'H5', value: '##### ', style: { fontFamily: fonts.serif } },
+  { kind: 'prefix', label: 'H6', value: '###### ', style: { fontFamily: fonts.serif } },
   { kind: 'wrap', label: 'B', value: '**', style: { fontFamily: fonts.sansMedium } },
   { kind: 'wrap', label: 'i', value: '_', style: { fontStyle: 'italic' } },
   { kind: 'wrap', label: 'S', value: '~~', style: { textDecorationLine: 'line-through' } },
   { kind: 'wrap', label: '▮', value: '==' }, // resaltado
+  { kind: 'clear', label: 'T✕' }, // limpiar formato
   { kind: 'prefix', label: '“', value: '> ' },
   { kind: 'prefix', label: '•', value: '- ' },
   { kind: 'prefix', label: '1.', value: '1. ' },
@@ -43,7 +49,7 @@ const ACTIONS: Action[] = [
   { kind: 'insert', label: '—', value: '\n---\n' },
 ];
 
-export function EditorToolbar({ onWrap, onPrefix, onInsert, onImage }: ToolbarProps) {
+export function EditorToolbar({ onWrap, onPrefix, onInsert, onImage, onClear }: ToolbarProps) {
   const theme = useTheme();
   return (
     <View style={[styles.bar, { backgroundColor: theme.bg, borderTopColor: theme.line }]}>
@@ -62,6 +68,7 @@ export function EditorToolbar({ onWrap, onPrefix, onInsert, onImage }: ToolbarPr
               if (a.kind === 'prefix') onPrefix(a.value);
               else if (a.kind === 'wrap') onWrap(a.value);
               else if (a.kind === 'image') onImage();
+              else if (a.kind === 'clear') onClear();
               else onInsert(a.value, a.offset);
             }}
           >

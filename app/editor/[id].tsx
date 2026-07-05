@@ -8,7 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Print from 'expo-print';
@@ -16,7 +16,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { useTheme, fonts, spacing } from '@/theme';
+import { useTheme, fonts, spacing, type Theme } from '@/theme';
 import { useFilesStore } from '@/storage/store';
 import { MdFile, EditorMode } from '@/types';
 import { EditorToolbar } from '@/components/EditorToolbar';
@@ -26,7 +26,10 @@ import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
 import { mdToHtml } from '@/lib/markdown';
 import { readImageDataUri } from '@/storage/vault';
+import { useSettings } from '@/storage/settings';
 import { deriveName, extractTags } from '@/utils/text';
+
+type SaveState = 'saved' | 'saving' | 'dirty';
 
 interface Sel {
   start: number;
@@ -37,12 +40,16 @@ export default function EditorScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const autosave = useSettings((s) => s.autosave);
+  const pdfMarginMm = useSettings((s) => s.pdfMarginMm);
   const { files, upsert, remove, vaultImages } = useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
   const [content, setContent] = useState('');
   const [mode, setMode] = useState<EditorMode>('edit');
   const [rendered, setRendered] = useState('');
+  const [saveState, setSaveState] = useState<SaveState>('saved');
   const [selection, setSelection] = useState<Sel>({ start: 0, end: 0 });
 
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
@@ -74,26 +81,41 @@ export default function EditorScreen() {
     }
   }, [id, files]);
 
-  // Autosave con debounce (600 ms).
+  // Persiste el contenido actual de inmediato. Devuelve true si guardó algo.
+  const doSave = useCallback(() => {
+    if (!file || content === file.content) return false;
+    const updated: MdFile = {
+      ...file,
+      content,
+      // Nota de carpeta (vault): el nombre = nombre del archivo, no se re-deriva.
+      name: file.uri ? file.name : deriveName(content),
+      tags: extractTags(content),
+      updatedAt: Date.now(),
+    };
+    upsert(updated);
+    setFile(updated);
+    setSaveState('saved');
+    return true;
+  }, [file, content, upsert]);
+
+  // Marca estado + autoguarda con debounce (solo si autosave está activo).
   useEffect(() => {
-    if (!file || content === file.content) return;
+    if (!file) return;
+    if (content === file.content) {
+      setSaveState('saved');
+      return;
+    }
+    if (!autosave) {
+      setSaveState('dirty'); // manual: se guarda con el botón o al salir
+      return;
+    }
+    setSaveState('saving');
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const updated: MdFile = {
-        ...file,
-        content,
-        // Nota de carpeta (vault): el nombre = nombre del archivo, no se re-deriva.
-        name: file.uri ? file.name : deriveName(content),
-        tags: extractTags(content),
-        updatedAt: Date.now(),
-      };
-      upsert(updated);
-      setFile(updated);
-    }, 600);
+    saveTimer.current = setTimeout(doSave, 600);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [content, file]);
+  }, [content, file, autosave, doSave]);
 
   // Aplica una edición y reposiciona el cursor de forma controlada.
   const applyEdit = useCallback((next: string, caret: number) => {
@@ -136,11 +158,29 @@ export default function EditorScreen() {
     [content, selection, applyEdit]
   );
 
+  // Limpia el formato Markdown de la selección (marcadores inline + prefijos de línea).
+  const onClear = useCallback(() => {
+    const { start, end } = selection;
+    if (start === end) return;
+    const cleaned = content
+      .slice(start, end)
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/~~([^~]+)~~/g, '$1')
+      .replace(/==([^=]+)==/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/_([^_]+)_/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s{0,3}>\s?/gm, '')
+      .replace(/^\s{0,3}([-*+]|\d+\.)\s+/gm, '');
+    applyEdit(content.slice(0, start) + cleaned + content.slice(end), start + cleaned.length);
+  }, [content, selection, applyEdit]);
+
   const handleExportPDF = async () => {
     if (!file) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const resolved = await inlineLocalImages(content, file.folder ?? '', vaultImages);
-    const { uri } = await Print.printToFileAsync({ html: mdToHtml(resolved, 'pdf') });
+    const { uri } = await Print.printToFileAsync({ html: mdToHtml(resolved, 'pdf', { pdfMarginMm }) });
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
       dialogTitle: `${file.name}.pdf`,
@@ -168,21 +208,24 @@ export default function EditorScreen() {
     await Sharing.shareAsync(uri, { mimeType: 'text/markdown', dialogTitle: `${file.name}.md` });
   };
 
-  // Guarda de inmediato lo pendiente (antes de saltar a otra nota).
+  // Guarda de inmediato lo pendiente (antes de salir o saltar a otra nota).
   const flushSave = () => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    if (file && content !== file.content) {
-      upsert({
-        ...file,
-        content,
-        name: file.uri ? file.name : deriveName(content),
-        tags: extractTags(content),
-        updatedAt: Date.now(),
-      });
-    }
+    doSave();
+  };
+
+  // Guardado manual desde el indicador/botón.
+  const handleManualSave = () => {
+    Haptics.selectionAsync();
+    flushSave();
+  };
+
+  const goBack = () => {
+    flushSave();
+    router.back();
   };
 
   // Salta a otra nota reemplazando la actual (back vuelve a la biblioteca).
@@ -218,7 +261,7 @@ export default function EditorScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
       <View style={[styles.topBar, { borderBottomColor: theme.line }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.back}>
+        <TouchableOpacity onPress={goBack} style={styles.back}>
           <Text style={[styles.backIcon, { color: theme.ink }]}>‹</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.back}>
@@ -227,6 +270,7 @@ export default function EditorScreen() {
         <Text style={[styles.title, { color: theme.muted }]} numberOfLines={1}>
           {file.name}.md
         </Text>
+        <SaveIndicator state={saveState} autosave={autosave} onSave={handleManualSave} theme={theme} />
         <ModeToggle mode={mode} onChange={setMode} />
       </View>
 
@@ -236,6 +280,8 @@ export default function EditorScreen() {
         currentId={id}
         onSelect={switchTo}
         onClose={() => setDrawerOpen(false)}
+        topInset={insets.top}
+        bottomInset={insets.bottom}
       />
 
       {/* KeyboardAvoidingView de react-native-keyboard-controller (como daemoni):
@@ -262,6 +308,7 @@ export default function EditorScreen() {
               onPrefix={onPrefix}
               onInsert={onInsert}
               onImage={handleImage}
+              onClear={onClear}
             />
           </>
         ) : (
@@ -293,6 +340,37 @@ export default function EditorScreen() {
     </SafeAreaView>
   );
 }
+
+// Indicador de guardado. Con autosave: muestra estado. Manual: botón "Guardar"
+// cuando hay cambios sin guardar.
+function SaveIndicator({
+  state,
+  autosave,
+  onSave,
+  theme,
+}: {
+  state: SaveState;
+  autosave: boolean;
+  onSave: () => void;
+  theme: Theme;
+}) {
+  if (!autosave && state === 'dirty') {
+    return (
+      <TouchableOpacity onPress={onSave} style={[indicatorStyles.pill, { backgroundColor: theme.accent }]}>
+        <Text style={[indicatorStyles.pillText, { color: '#f5f1ea' }]}>Guardar</Text>
+      </TouchableOpacity>
+    );
+  }
+  const label = state === 'saving' ? 'Guardando…' : 'Guardado';
+  const color = state === 'saving' ? theme.accent : theme.muted;
+  return <Text style={[indicatorStyles.text, { color }]}>{label}</Text>;
+}
+
+const indicatorStyles = StyleSheet.create({
+  text: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 0.3 },
+  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  pillText: { fontFamily: fonts.monoMedium, fontSize: 10, letterSpacing: 0.5 },
+});
 
 // Resuelve una ruta relativa (con ./ , ../ o \) contra la carpeta de la nota.
 function resolveRel(folder: string, ref: string): string {

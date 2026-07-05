@@ -35,6 +35,15 @@ function FolderIcon({ color }: { color: string }) {
   );
 }
 
+function GearIcon({ color }: { color: string }) {
+  return (
+    <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+      <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+    </Svg>
+  );
+}
+
 export default function LibraryScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -186,6 +195,9 @@ export default function LibraryScreen() {
       <View style={[styles.topBar, { borderBottomColor: theme.line }]}>
         <Wordmark size={19} />
         <View style={styles.topRight}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')}>
+            <GearIcon color={theme.muted} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.openBtn,
@@ -306,6 +318,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   topRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  iconBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   openBtn: {
     flexDirection: 'row',
     alignItems: 'center',
