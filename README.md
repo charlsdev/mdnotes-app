@@ -10,7 +10,7 @@ con **vault**: abres una carpeta del teléfono y editas los `.md` reales en siti
 
 - **React Native 0.81** + **Expo SDK 54** (managed, expo-router 6, React 19, New Architecture)
 - **TypeScript** estricto · **Zustand** (estado, vault-aware) · **expo-file-system** + AsyncStorage
-- **react-native-webview** + **markdown-it** + **KaTeX** (preview y PDF, `src/lib/markdown.ts`)
+- **react-native-webview** + **markdown-it** + **KaTeX** + **highlight.js** (preview y PDF, `src/lib/markdown.ts`)
 - **react-native-keyboard-controller** (teclado) · **expo-image-picker** (imágenes)
 - **expo-print** + **expo-sharing** (exportar/compartir)
 - Fuentes: **Fraunces** / **Inter Tight** / **JetBrains Mono** vía `@expo-google-fonts/*`
@@ -21,12 +21,13 @@ con **vault**: abres una carpeta del teléfono y editas los `.md` reales en siti
 mdnotes-app/
 ├── app/
 │   ├── _layout.tsx        Fuentes + splash + KeyboardProvider + AlertProvider + Stack
-│   ├── index.tsx          Biblioteca: lista/árbol, abrir carpeta, importar, crear, buscar
-│   └── editor/[id].tsx    Editor + preview (WebView) + toolbar + cajón de notas (☰)
+│   ├── index.tsx          Biblioteca: lista/árbol, abrir carpeta, importar, crear, buscar, ⚙
+│   ├── editor/[id].tsx    Editor + preview (WebView) + toolbar + cajón (☰) + guardado
+│   └── settings.tsx       Ajustes: autoguardado + margen del PDF
 ├── src/
 │   ├── components/        EditorToolbar, ModeToggle, MarkdownPreview, NoteTree,
 │   │                      NoteTreeDrawer, AppAlert, Footer, CharlsdevMark, Wordmark
-│   ├── storage/           files.ts (internas) · vault.ts (carpeta SAF) · store.ts (Zustand)
+│   ├── storage/           files.ts (internas) · vault.ts (SAF) · store.ts · settings.ts
 │   ├── lib/               markdown.ts · katex-css.ts (generado) · tree.ts
 │   ├── theme/ · types/ · utils/
 ├── assets/                icon, icon-dark, adaptive-icon, splash, favicon
@@ -42,13 +43,18 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Vault**: abrir una carpeta del teléfono (recursivo, subcarpetas) y editar los `.md`
   reales en sitio; **árbol** de carpetas colapsable. (Solo almacenamiento local, no Drive.)
 - **Importar** archivos `.md` sueltos (incl. desde Drive: copia local).
-- Notas internas cuando no hay carpeta abierta. Crear / editar / eliminar · autosave (600 ms).
-- **Editor** con toolbar: H1–H3, negrita/cursiva/tachado/resaltado, listas, checkbox, cita,
-  código, **tabla**, **callout** (`> [!WARNING]`), **ecuación** (`$$`), **imagen**, link, regla.
-- **Preview** (WebView) con tablas, tachado, resaltado, callouts, **matemáticas KaTeX**
-  (offline), footnotes, imágenes. Mismo motor que el **export PDF**.
+- Notas internas cuando no hay carpeta abierta. Crear / editar / eliminar.
+- **Guardado configurable**: autoguardado (con indicador "Guardando…/Guardado") o manual
+  con botón "Guardar". Se elige en Ajustes.
+- **Editor** con toolbar: H1–H6, negrita/cursiva/tachado/resaltado/limpiar-formato, listas,
+  checkbox, cita, código, **tabla**, **callout** (`> [!WARNING]`), **ecuación** (`$$`),
+  **imagen** (galería), link, regla.
+- **Preview** (WebView) con tablas, tachado, resaltado, **callouts con color** (estilo
+  GitHub), **matemáticas KaTeX** (offline), **resaltado de sintaxis** en código, footnotes,
+  imágenes (galería e **imágenes locales del vault** `./img/x.png`). Mismo motor que el PDF.
 - Saltar de una nota a otra desde el editor (cajón ☰) sin volver a la biblioteca.
-- Exportar a **PDF** y compartir el `.md` crudo. Búsqueda en contenido. Claro/oscuro automático.
+- Exportar a **PDF** (A4, **margen configurable**) y compartir el `.md` crudo.
+- **Ajustes** (⚙): autoguardado y margen del PDF. Búsqueda en contenido. Claro/oscuro automático.
 
 ## Correr / probar
 
