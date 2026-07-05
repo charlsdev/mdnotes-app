@@ -148,10 +148,10 @@ function pageCss(
   const alertBlock = (name: keyof ReturnType<typeof alertColors>, cls: string) => `
     blockquote.gh-alert-${cls} { border-left-color: ${a[name]}; background: ${a[name]}22; }
     blockquote.gh-alert-${cls} .gh-alert-title { color: ${a[name]}; }`;
-  // El margen del PDF se aplica como padding del body (determinista en expo-print);
-  // `@page margin: 0` quita el margen por defecto de la impresora para no sumar.
-  const pageRule = forPdf ? `@page { size: A4; margin: 0; }` : '';
-  const bodyPad = forPdf ? `${marginMm}mm` : '20px 18px 60px';
+  // Márgenes del PDF vía @page → aplican en TODAS las páginas (el padding del body
+  // solo separaba la primera). Sin padding del body para no duplicar.
+  const pageRule = forPdf ? `@page { size: A4; margin: ${marginMm}mm; }` : '';
+  const bodyPad = forPdf ? '0' : '20px 18px 60px';
   const bodyBg = forPdf ? '#ffffff' : p.bg;
   const fontPx = Math.round(16 * scale);
   return `
