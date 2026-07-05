@@ -1,0 +1,78 @@
+{
+  "expo": {
+    "name": "MDNotes",
+    "slug": "mdnotes",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "mdnotes",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": ["assets/**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "xyz.charlsdev.mdnotes",
+      "infoPlist": {
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Markdown",
+            "LSItemContentTypes": ["net.daringfireball.markdown", "public.text"],
+            "LSHandlerRank": "Alternate"
+          }
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#f5f1ea"
+      },
+      "package": "xyz.charlsdev.mdnotes",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "mimeType": "text/markdown" }, { "mimeType": "text/plain" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MDNotes accede a tus fotos para insertar imágenes en las notas."
+        }
+      ],
+      [
+        "./plugins/withCmakeVersion.js",
+        {
+          "version": "4.1.2"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#f5f1ea",
+          "dark": {
+            "image": "./assets/icon-dark.png",
+            "backgroundColor": "#12100e"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

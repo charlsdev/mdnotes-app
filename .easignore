@@ -1,0 +1,6 @@
+# Material de referencia — no forma parte de la app compilada.
+initials/
+
+# Artefactos locales
+dist/
+dist-check/
