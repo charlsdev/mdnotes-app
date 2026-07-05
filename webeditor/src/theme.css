@@ -72,6 +72,13 @@ html, body { margin: 0; padding: 0; background: var(--crepe-color-background); }
 .milkdown .ProseMirror strong { color: var(--crepe-color-on-background); }
 .milkdown .ProseMirror h1, .milkdown .ProseMirror h2, .milkdown .ProseMirror h3 { letter-spacing: -0.3px; color: var(--crepe-color-on-background); }
 
+/* Imágenes: que quepan al ancho (sin scroll horizontal) y no gigantes. */
+.milkdown .ProseMirror img { max-width: 100% !important; height: auto !important; }
+.milkdown .ProseMirror .milkdown-image-block .image-wrapper { max-width: 100% !important; }
+.milkdown .ProseMirror .milkdown-image-block img,
+.milkdown .ProseMirror .milkdown-image-inline img { max-height: 60vh; object-fit: contain; }
+.milkdown .ProseMirror .milkdown-image-inline { max-width: 100% !important; overflow: hidden; }
+
 /* Callouts de color en VIVO (mismo esquema que VER; los pinta alerts.ts) */
 .milkdown .ProseMirror blockquote.gh-alert {
   border-left-width: 4px;
