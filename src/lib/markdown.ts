@@ -203,6 +203,15 @@ function pageCss(
     .hljs-deletion { color: #e08a8a; }
     .hljs-emphasis { font-style: italic; }
     .hljs-strong { font-weight: 700; }
+    ${
+      forPdf
+        ? `
+    /* PDF: no partir bloques entre páginas ni dejar títulos huérfanos. */
+    pre, blockquote, table, tr, img, .katex-display, .footnotes { break-inside: avoid; page-break-inside: avoid; }
+    h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
+    p { orphans: 2; widows: 2; }`
+        : ''
+    }
   `;
 }
 

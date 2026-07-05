@@ -1,5 +1,7 @@
-/* Override de las variables de Crepe para la paleta de MDNotes (papel/tinta/bermellón). */
-:root {
+/* Override de las variables de Crepe. IMPORTANTE: Crepe las define en `.milkdown`,
+   así que hay que igualar/superar esa especificidad (`:root` NO alcanza; por eso el
+   tema oscuro no llegaba al editor). Van en `.milkdown` (claro) y `body.dark .milkdown`. */
+.milkdown {
   --crepe-color-background: #f5f1ea;
   --crepe-color-on-background: #1a1714;
   --crepe-color-surface: #f5f1ea;
@@ -20,9 +22,10 @@
   --crepe-font-title: Georgia, 'Times New Roman', serif;
   --crepe-font-default: -apple-system, Roboto, system-ui, sans-serif;
   --crepe-font-code: 'SF Mono', Menlo, monospace;
+  padding: 0;
 }
 
-body.dark {
+body.dark .milkdown {
   --crepe-color-background: #12100e;
   --crepe-color-on-background: #f5f1ea;
   --crepe-color-surface: #12100e;
@@ -39,9 +42,10 @@ body.dark {
   --crepe-color-inline-area: #201d19;
 }
 
-html, body { margin: 0; padding: 0; background: var(--crepe-color-background); }
+/* El fondo de la ventana (fuera de .milkdown no resuelve las vars de Crepe). */
+html, body { margin: 0; padding: 0; background: #f5f1ea; }
+body.dark, body.dark html { background: #12100e; }
 #app { min-height: 100vh; }
-.milkdown { padding: 0; }
 
 /* Contenido a lo ancho — responsive: full en móvil, centrado (ancho máx) en tablet.
    El default de Crepe es padding 60px 120px, muy angosto en teléfono.

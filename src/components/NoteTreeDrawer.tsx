@@ -3,6 +3,7 @@ import { Modal, View, Text, TextInput, Pressable, StyleSheet, StatusBar, Platfor
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { MdFile } from '@/types';
 import { NoteTree } from './NoteTree';
+import { Footer } from './Footer';
 
 // Cajón deslizante con el árbol de notas — para saltar de un .md a otro desde
 // el editor sin volver a la biblioteca. Los insets se pasan como props porque el
@@ -68,6 +69,7 @@ export function NoteTreeDrawer({
               onSelect(n);
               onClose();
             }}
+            footer={<Footer />}
           />
         </View>
         <Pressable style={styles.scrim} onPress={onClose} />
