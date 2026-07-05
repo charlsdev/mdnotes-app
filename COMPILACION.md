@@ -11,6 +11,20 @@
 pnpm install
 ```
 
+## Editor WYSIWYG (VIVO) — regenerar el asset
+
+El editor VIVO (Milkdown Crepe) se compila **aparte** en `webeditor/` a un HTML autónomo
+offline (`assets/webeditor.html`). Solo hay que regenerarlo si tocas `webeditor/src/*`:
+
+```bash
+cd webeditor
+npm install          # una vez (tiene su propio node_modules)
+node build.mjs       # → assets/webeditor.html
+```
+
+El resto de la app lo consume como asset; no necesita nada más. `webeditor/` está excluido
+de la compilación de la app (tsconfig / metro blockList / .easignore).
+
 ## Probar: Expo Go vs APK
 
 > ⚠️ **MDNotes ya NO corre en Expo Go.** Usa `react-native-keyboard-controller`, que

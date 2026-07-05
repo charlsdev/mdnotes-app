@@ -9,12 +9,13 @@
 - **expo-router 6** (rutas basadas en archivos), TypeScript estricto
 - **Zustand** (`src/storage/store.ts`) — estado global de notas + vault
 - **expo-file-system** (persistencia) — API clásica vía `expo-file-system/legacy`
-- **react-native-webview** — render del preview (markdown-it + KaTeX + highlight.js)
+- **react-native-webview** — render del preview (VER) **y** del editor WYSIWYG (VIVO)
 - **react-native-keyboard-controller** — teclado (como daemoni)
 - **@expo-google-fonts** — Fraunces (display), Inter Tight (UI), JetBrains Mono (editor)
 - Export/compartir: expo-print + expo-sharing · Imágenes: expo-image-picker
-- Markdown: markdown-it + plugins (mark, footnote, task-lists, `@vscode/markdown-it-katex`)
+- Preview (VER): markdown-it + plugins (mark, footnote, task-lists, `@vscode/markdown-it-katex`)
   + **highlight.js** (resaltado de sintaxis)
+- **Editor WYSIWYG (VIVO)**: **Milkdown Crepe** bundleado offline (proyecto aparte `webeditor/`)
 
 ## Estructura
 
@@ -22,21 +23,26 @@
 app/
   _layout.tsx        Fuentes + splash + KeyboardProvider + AlertProvider + Stack + carga de ajustes
   index.tsx          Biblioteca: lista/árbol, abrir carpeta (vault), importar, crear, buscar, ⚙ ajustes
-  editor/[id].tsx    Editor + preview (WebView) + toolbar + cajón de notas (☰) + indicador de guardado
+  editor/[id].tsx    Editor de 3 modos (VIVO/MD/VER) + toolbar + cajón (☰) + indicador de guardado
   settings.tsx       Ajustes: autoguardado (on/off) + margen del PDF
 src/
-  components/         EditorToolbar, ModeToggle, MarkdownPreview, NoteTree, NoteTreeDrawer,
-                     AppAlert, Footer, CharlsdevMark, Wordmark
+  components/         EditorToolbar, ModeToggle, MarkdownPreview (VER), MarkdownWysiwyg (VIVO),
+                     NoteTree, NoteTreeDrawer, AppAlert, Footer, CharlsdevMark, Wordmark
   storage/           files.ts (notas internas) · vault.ts (carpeta SAF) · store.ts (Zustand)
                      · settings.ts (ajustes: pdfMarginMm, autosave — AsyncStorage)
-  lib/               markdown.ts (mdToHtml, compartido preview/PDF) · katex-css.ts (GENERADO)
+  lib/               markdown.ts (mdToHtml, compartido VER/PDF) · katex-css.ts (GENERADO)
                      · tree.ts (buildTreeRows)
   theme/             Paleta de marca + fuentes + tokens
   types/  utils/
-assets/              icon, icon-dark, adaptive-icon, splash(*), favicon
+assets/              icon, icon-dark, adaptive-icon, splash(*), favicon, webeditor.html (GENERADO)
 plugins/             withCmakeVersion.js (fix rutas largas de Windows, ver COMPILACION.md)
+scripts/             gen-katex-css.mjs (regenera src/lib/katex-css.ts)
+webeditor/           Proyecto de build del editor VIVO (Milkdown Crepe) → assets/webeditor.html
 initials/            SOLO material de referencia — NO se compila (ver abajo)
 ```
+
+`webeditor/` e `initials/` NO son parte de la app: excluidos en tsconfig, metro.config.js
+(`resolver.blockList`) y `.easignore`. `metro.config.js` añade `'html'` a `assetExts`.
 
 ## Reglas de oro (romper esto rompe el build o el runtime)
 
@@ -112,8 +118,44 @@ round-trip del parámetro (→ editor con spinner infinito). Por eso:
   (portable, sin resize aún).
 - **Imágenes locales del vault** (`![](./img/x.png)` o `<img src>`): el escaneo indexa las
   imágenes (`VaultScan.images`: relPath→uri) y el editor las resuelve a data URI antes del
-  preview/PDF (`inlineLocalImages` + `resolveRel` en `editor/[id].tsx`; `readImageDataUri`
-  lee SAF en base64). Maneja `./`, `../` y `\` de Windows.
+  preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
+  `readImageDataUri` lee SAF en base64). Maneja `./`, `../` y `\` de Windows.
+
+## Editor: 3 modos — VIVO / MD / VER (`EditorMode = 'live' | 'code' | 'view'`)
+
+Toggle en el topbar (`ModeToggle`). Abrir nota → **VER** (rápido, solo lectura);
+nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
+
+- **MD** (`code`): `<TextInput>` monoespaciado con el `EditorToolbar` (H1–H6, B/i/S/▮/T✕,
+  listas, código, tabla, callout, ∑, 🖼, link, hr). Control byte-a-byte del `.md`.
+- **VER** (`view`): `MarkdownPreview.tsx` (WebView, `mdToHtml`) + barra PDF/Compartir/Eliminar.
+- **VIVO** (`live`): **Milkdown Crepe** (WYSIWYG tipo Typora) en `MarkdownWysiwyg.tsx`.
+
+### VIVO (Crepe) — arquitectura y GOTCHAS
+- El editor se compila **aparte** en `webeditor/` (tiene su propio `node_modules`):
+  `npm install` + `node build.mjs` → **esbuild** bundlea Crepe a un HTML autónomo offline
+  → **`assets/webeditor.html`** (~4 MB). Se carga como **asset** (`require('../../assets/webeditor.html')`
+  + expo-asset), NO como string (no infla el bundle JS). Regenera el asset tras tocar
+  `webeditor/src/*` con `cd webeditor && node build.mjs`.
+- Puente RN↔WebView (`MarkdownWysiwyg.tsx`): RN→WV `window.__MD__` inicial +
+  `MDNOTES.setContent/setTheme`; WV→RN `postMessage({type:'change', md})`.
+- **Crepe NORMALIZA el markdown al editar** (re-serializa todo el doc). Introduce ruido que
+  se limpia en `onLiveChange` antes de guardar: **des-escapa alertas** (`\[!NOTE]`→`[!NOTE]`,
+  ver abajo), quita `<br />`, restaura rutas de imagen. Aun así puede reformatear detalles →
+  para control exacto usar **MD**.
+- **BUG alertas (resuelto)**: Crepe ESCAPA el corchete al serializar (`[!NOTE]`→`\[!NOTE]`),
+  y el `\[` rompe la detección de alertas en VER/PDF (salen literales). Fix doble:
+  `unescapeAlerts()` en `mdToBody` (des-escapa al renderizar) + `onLiveChange` (limpia el .md).
+- **Crepe NO renderiza `<img>` HTML** (lo muestra como texto/base64): al entrar a VIVO se
+  convierten a `![](...)`. Imágenes del vault se pasan como data URI (`liveMd`), y `onLiveChange`
+  restaura las rutas originales (mapa `imgRestore`) para no corromper el `.md`.
+- **Callouts de color en VIVO**: `webeditor/src/alerts.ts` es un plugin de ProseMirror
+  (`$prose` de `@milkdown/kit`) que decora los blockquotes `[!TYPE]` con la clase de color,
+  OCULTA el marcador y muestra un widget-header (ícono octicon + etiqueta), como VER.
+- **Tema/CSS de Crepe**: `webeditor/src/theme.css` sobreescribe variables `--crepe-*` a la
+  paleta de marca + arregla: ancho del contenido (default de Crepe es angostísimo), menú
+  slash (z-index/sombra/compacto), control de bloque `+`/⠿ (`left: 8px !important`, Crepe lo
+  manda fuera de pantalla), línea activa de CodeMirror (quita el cuadrito), tamaño de imagen.
 
 ## UI
 
@@ -133,9 +175,9 @@ round-trip del parámetro (→ editor con spinner infinito). Por eso:
   topbar. Autosave ON → debounce 600ms, muestra "Guardando…"/"Guardado". Autosave OFF →
   botón "Guardar" cuando hay cambios; igual guarda al salir (`goBack`) y al saltar de nota
   (`switchTo`) para no perder datos. `doSave` es la fuente única.
-- **Toolbar del editor** (`EditorToolbar.tsx`): H1–H6, B / i / S (tachado) / ▮ (resaltado)
-  / T✕ (limpiar formato), cita, listas, checkbox, código, tabla, callout, ∑ (ecuación),
-  🖼 (imagen de galería), link, regla.
+- **Toolbar del editor** (`EditorToolbar.tsx`, solo en modo **MD**): H1–H6, B / i / S (tachado)
+  / ▮ (resaltado) / T✕ (limpiar formato), cita, listas, checkbox, código, tabla, callout,
+  ∑ (ecuación), 🖼 (imagen de galería), link, regla. (VIVO usa la UI propia de Crepe.)
 - **Teclado**: `react-native-keyboard-controller` (`<KeyboardProvider>` + su
   `<KeyboardAvoidingView behavior="padding">`). Es **módulo nativo** → **NO corre en
   Expo Go**; probar solo con APK (`build-and-install.ps1 -Prebuild`). Ver COMPILACION.md.
