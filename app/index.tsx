@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,11 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Linking from 'expo-linking';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { useFilesStore } from '@/storage/store';
-import { relativeTime, preview } from '@/utils/text';
+import { relativeTime, preview, deriveName } from '@/utils/text';
 import { MdFile } from '@/types';
 import { Wordmark } from '@/components/Wordmark';
 import { Footer } from '@/components/Footer';
@@ -27,6 +28,15 @@ import { NoteTree } from '@/components/NoteTree';
 import { appAlert } from '@/components/AppAlert';
 
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
+
+// Nombre de nota a partir de la URI de un archivo externo. Devuelve '' cuando el
+// proveedor usa ids opacos (ej. Descargas: `msf:1000000123`): ahí el nombre se
+// deriva del contenido en vez de inventar uno con el id.
+function nameFromUri(url: string): string {
+  const decoded = decodeURIComponent(url);
+  const last = (decoded.split(':').pop() ?? decoded).split(/[/\\]/).pop() ?? '';
+  return MD_RE.test(last) ? last.replace(MD_RE, '') : '';
+}
 
 function FolderIcon({ color }: { color: string }) {
   return (
@@ -82,7 +92,37 @@ export default function LibraryScreen() {
 
   // Navega al editor pasando el id como PARÁMETRO (se codifica bien; los id de
   // vault son URIs SAF con / y : que romperían la ruta si se interpolan).
-  const openNote = (note: MdFile) => router.push({ pathname: '/editor/[id]', params: { id: note.id } });
+  const openNote = useCallback(
+    (note: MdFile) => router.push({ pathname: '/editor/[id]', params: { id: note.id } }),
+    [router]
+  );
+
+  // Abrir un .md desde otra app ("Abrir con MDNotes", compartir). El intent trae
+  // una URI con permiso de SOLO LECTURA y no persistible, así que no se puede
+  // editar en sitio: importamos una COPIA (dentro de la carpeta si hay vault).
+  const handledUrl = useRef<string | null>(null);
+  useEffect(() => {
+    const handle = async (url: string | null) => {
+      if (!url || handledUrl.current === url) return;
+      if (!/^(content|file):/i.test(url)) return; // mdnotes://… u otros: no son archivos
+      handledUrl.current = url;
+      try {
+        const content = await FileSystem.readAsStringAsync(url);
+        const file = await createWith(nameFromUri(url) || deriveName(content), content);
+        openNote(file);
+      } catch (e: any) {
+        appAlert(
+          'No pude abrir ese archivo',
+          `${e?.message ?? e}\n\nSolo puedo abrir archivos de texto (.md, .txt).`,
+          undefined,
+          { variant: 'error' }
+        );
+      }
+    };
+    Linking.getInitialURL().then(handle);
+    const sub = Linking.addEventListener('url', (e) => handle(e.url));
+    return () => sub.remove();
+  }, [createWith, openNote]);
 
   // Botón de carpeta: sin vault abre una (Android) o importa archivos (iOS); con
   // vault abierto muestra el menú de la carpeta.
@@ -108,7 +148,7 @@ export default function LibraryScreen() {
       if (n === 0) {
         appAlert(
           'Carpeta abierta, pero vacía',
-          'No encontré archivos .md ahí. Ojo: solo leo los que están DIRECTAMENTE en la carpeta (no en subcarpetas).',
+          'No encontré archivos .md ahí, ni en sus subcarpetas.',
           undefined,
           { variant: 'error' }
         );
@@ -175,7 +215,14 @@ export default function LibraryScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     appAlert(`Eliminar "${file.name}"`, 'Esta acción no se puede deshacer.', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => remove(file.id) },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: () =>
+          remove(file.id).catch((e: any) =>
+            appAlert('No se pudo eliminar', String(e?.message ?? e), undefined, { variant: 'error' })
+          ),
+      },
     ]);
   };
 

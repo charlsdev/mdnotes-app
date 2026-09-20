@@ -2,6 +2,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MdFile } from '@/types';
+import { elideDataUris } from '@/utils/text';
 
 const DOCS_DIR = FileSystem.documentDirectory + 'notes/';
 const INDEX_KEY = 'mdnotes:index';
@@ -13,6 +14,8 @@ async function ensureDir() {
   }
 }
 
+// Lista para la biblioteca: el contenido va en su versión LIGERA (sin los base64
+// de las imágenes). El editor relee el archivo completo con `readContent`.
 export async function listFiles(): Promise<MdFile[]> {
   await ensureDir();
   const raw = await AsyncStorage.getItem(INDEX_KEY);
@@ -22,12 +25,17 @@ export async function listFiles(): Promise<MdFile[]> {
     const files: MdFile[] = [];
     for (const id of ids) {
       const file = await readFile(id);
-      if (file) files.push(file);
+      if (file) files.push({ ...file, content: elideDataUris(file.content) });
     }
     return files.sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
   }
+}
+
+// Contenido completo del .md interno (lo que edita y guarda el editor).
+export async function readContent(id: string): Promise<string> {
+  return FileSystem.readAsStringAsync(DOCS_DIR + id + '.md');
 }
 
 export async function readFile(id: string): Promise<MdFile | null> {

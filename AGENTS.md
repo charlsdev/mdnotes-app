@@ -76,12 +76,55 @@ El `store` es **vault-aware**: si `file.uri` existe → operación SAF; si no �
 Ambas se muestran mezcladas. Al crear/importar con un vault abierto, el archivo se
 escribe **dentro** de la carpeta.
 
+### `MdFile.content` en el store es una copia LIGERA (no la guardes)
+La lista mantiene el texto con los **base64 de las imágenes elididos** (`elideDataUris`
+en `src/utils/text.ts`): una nota con fotos pesa KB de texto en memoria en vez de MB.
+Alcanza para listar, buscar, derivar tags/preview y el árbol.
+- El editor **relee el archivo completo del disco al abrir la nota** (`readContent` del
+  store) y compara contra `savedRef` para saber si hay cambios — NO contra `file.content`.
+  Escribir la copia ligera al disco **corrompería el `.md`** (perdería las imágenes).
+- Efecto secundario bueno: al abrir una nota se toman las ediciones hechas fuera de la
+  app (Obsidian, PC) sin necesidad de reabrir la carpeta.
+- Si la relectura falla (archivo movido/borrado desde otra app) el editor avisa y vuelve;
+  nunca cae al contenido del store.
+
+### Errores de escritura: `upsert`/`remove` LANZAN
+El `set` de zustand ocurre **después** de que la escritura tuvo éxito. El editor hace
+`await upsert(...)` dentro de `try/catch`: si falla, marca `dirty`, muestra el error y
+**no navega** (salir perdería el texto). No vuelvas al patrón optimista sin `await`:
+decía "Guardado" con el archivo intacto.
+
 ### Vault (Storage Access Framework) — `src/storage/vault.ts`
 - "Abrir carpeta" → `requestDirectoryPermissionsAsync` (el picker deja elegir
   CUALQUIER carpeta del teléfono: interno, Descargas, Documentos, SD). El permiso
   se **persiste** en AsyncStorage (`mdnotes:vault-uri`), sobrevive reinicios.
 - **Escaneo RECURSIVO**: lee los `.md` de la carpeta y subcarpetas (cap depth 8 /
   1000 archivos). Detecta subcarpeta con heurística (sin extensión → intenta listar).
+- **Fechas reales**: el escaneo toma `modificationTime` del archivo con la API NUEVA de
+  `expo-file-system` (`new File(uri).modificationTime`, propiedad **síncrona** que sí
+  funciona sobre `content://`; la legacy `getInfoAsync` no la expone). Si el proveedor no
+  la da → `0` y la UI **no muestra hora** (`relativeTime` devuelve `''`). NO vuelvas a
+  poner `Date.now()` en el escaneo: mostraba "ahora" en archivos de hace años.
+
+### GOTCHA CRÍTICO: SAF no trunca al escribir (texto duplicado al final)
+`FileSystem.writeAsStringAsync` sobre una URI SAF termina en
+`contentResolver.openOutputStream(uri)`, o sea modo **`"w"`**, que en
+`ExternalStorageProvider` **NO trunca** el archivo. Al guardar un texto más corto que el
+anterior, la **cola del contenido viejo queda pegada al final** del `.md` — y reaparece en
+VIVO, MD y VER porque está en el archivo, no en el render. Desde JS no se puede pedir
+modo `"wt"`.
+- `writeVaultFile` (`src/storage/vault.ts`) lo compensa: escribe, compara el tamaño real
+  (`new File(uri).size`) contra `utf8Length(content)` y, si sobra, **borra y recrea** el
+  archivo. El orden importa — primero escribir (el archivo nunca queda vacío ni a medias),
+  después recrear.
+- En los proveedores locales el document id se deriva de la ruta, así que el archivo
+  recreado conserva la **misma URI** (y por tanto el mismo id de nota). Aun así `upsert`
+  guarda la URI que devuelve la función, por si cambiara.
+- Se recrea **solo** con `.md`/`.txt` (mimes que Android reconstruye sin renombrar). Con
+  `.markdown`/`.mdx` se prefiere dejar la cola antes que renombrar el archivo del usuario.
+- Por eso `MdFile.dirUri` (la carpeta contenedora) se guarda en el escaneo: hace falta
+  para recrear. Sin él se deriva del document id (`parentDirUri`).
+
 - **LIMITACIÓN**: SAF RECHAZA carpetas de **Google Drive** u otras nubes
   (`content://com.google.android.apps.docs...` → "not a Storage Access Framework URI").
   El vault SOLO sirve con almacenamiento del teléfono. Para Drive → "Importar
@@ -173,7 +216,18 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   colapsables). La biblioteca lo usa con vault; sin vault, lista rica con preview/tags.
 - **Saltar de nota a nota**: `NoteTreeDrawer.tsx` (cajón, botón ☰ en el editor) →
   `switchTo` hace `flushSave()` (guarda lo pendiente) + `router.replace(...)`. El editor
-  recarga al cambiar `id` (ref `loadedId`).
+  recarga al cambiar `id` (ref `loadedId`). Si el guardado falla **no navega**.
+  - **GOTCHA VIVO**: el efecto que alimenta a Crepe NO puede depender de `content` (haría
+    re-feed en cada tecla), así que lee `contentRef.current` y depende de `ready`. El
+    `contentRef` se sincroniza en un efecto declarado **antes** — los efectos corren en
+    orden de declaración y, si no, al saltar de nota VIVO recibiría el texto de la
+    anterior (y lo guardaría en el archivo nuevo).
+- **Abrir un `.md` desde otra app** ("Abrir con MDNotes" / compartir): los intent filters
+  están en `app.json` y el handler en `app/index.tsx` (`Linking.getInitialURL` +
+  listener `url`). La URI del intent trae permiso de **solo lectura y no persistible**,
+  así que NO se puede editar en sitio: se importa una **copia** (dentro del vault si hay
+  carpeta abierta). El nombre sale de la URI y, si el proveedor usa ids opacos
+  (Descargas: `msf:1000000123`), del primer título del contenido.
 - **Ajustes** (`app/settings.tsx`, engrane ⚙ en la biblioteca): store `settings.ts`
   (zustand + AsyncStorage `mdnotes:settings`, cargado en `_layout`). Opciones: margen del PDF,
   autoguardado, **tema** (`system|light|dark` → `useEffectiveScheme()` en `src/theme`, respetado

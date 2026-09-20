@@ -4,9 +4,12 @@
 // así que sobrevive reinicios.
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
+// API nueva (SDK 54): `size` y `modificationTime` son propiedades SÍNCRONAS y sí
+// funcionan sobre URIs SAF — la legacy no expone la fecha de un content://.
+import { File } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MdFile } from '@/types';
-import { computeTags } from '@/utils/text';
+import { computeTags, elideDataUris, utf8Length } from '@/utils/text';
 
 const VAULT_KEY = 'mdnotes:vault-uri';
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
@@ -84,7 +87,6 @@ async function isDirectory(uri: string, name: string): Promise<boolean> {
 // imágenes (ruta relativa → URI) para poder resolverlas en el preview.
 // La raíz propaga errores (ej. Drive).
 export async function listVault(rootUri: string): Promise<VaultScan> {
-  const now = Date.now();
   const out: MdFile[] = [];
   const images: Record<string, string> = {};
   let mdSeen = 0;
@@ -107,13 +109,17 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
         mdSeen++;
         try {
           const content = await FileSystem.readAsStringAsync(uri);
+          const mtime = fileModifiedAt(uri);
           out.push({
             id: vaultIdForUri(uri),
             uri,
+            dirUri,
             name: name.replace(MD_RE, ''),
-            content,
-            createdAt: now,
-            updatedAt: now,
+            // Copia ligera para listar/buscar; el editor relee el archivo completo.
+            content: elideDataUris(content),
+            // Fecha real del archivo. Si el proveedor no la da, 0 → la UI no muestra hora.
+            createdAt: mtime,
+            updatedAt: mtime,
             tags: computeTags(content),
             folder: rel,
           });
@@ -143,9 +149,96 @@ export async function readImageDataUri(uri: string): Promise<string> {
   return `data:${mime};base64,${b64}`;
 }
 
-// Escribe de vuelta al archivo real (edición en sitio).
-export async function writeVaultFile(uri: string, content: string): Promise<void> {
+// Fecha de modificación real del archivo (ms epoch), o 0 si no se puede leer.
+function fileModifiedAt(uri: string): number {
+  try {
+    return new File(uri).modificationTime ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Tamaño real en bytes, o -1 si no se puede leer.
+function fileSize(uri: string): number {
+  try {
+    return new File(uri).size ?? -1;
+  } catch {
+    return -1;
+  }
+}
+
+// Lee el contenido COMPLETO del archivo (con los base64 de las imágenes). Es lo
+// que edita y guarda el editor; el store solo conserva la copia ligera.
+export async function readVaultFile(uri: string): Promise<string> {
+  return FileSystem.readAsStringAsync(uri);
+}
+
+// URI SAF de la carpeta contenedora, derivada del document id (`primary:Docs/sub/x.md`
+// → `primary:Docs/sub`). Solo se usa como respaldo cuando la nota no trae `dirUri`;
+// funciona con los proveedores locales, que son los únicos que el vault admite.
+function parentDirUri(uri: string): string | null {
+  const i = uri.lastIndexOf('/document/');
+  if (i < 0) return null;
+  const head = uri.slice(0, i + '/document/'.length);
+  const docId = uri.slice(i + '/document/'.length);
+  const cut = docId.toUpperCase().lastIndexOf('%2F');
+  if (cut < 0) return null;
+  return head + docId.slice(0, cut);
+}
+
+// Extensión → mime que Android reconstruye SIN renombrar el archivo al recrearlo.
+const RECREATE_MIME: Record<string, string> = { md: 'text/markdown', txt: 'text/plain' };
+
+// Escribe de vuelta al archivo real (edición en sitio). Devuelve la URI final.
+//
+// GOTCHA (bug del texto duplicado al final): expo-file-system escribe en SAF con
+// `contentResolver.openOutputStream(uri)`, o sea modo "w", que en ExternalStorageProvider
+// NO trunca el archivo. Al guardar un texto más corto que el anterior, la COLA del
+// contenido viejo queda pegada al final del .md y reaparece en VIVO/MD/VER (está en el
+// archivo, no en el render). Como no podemos pedir modo "wt" desde JS, detectamos el
+// sobrante comparando bytes y recreamos el archivo.
+//
+// El orden importa: primero escribimos (el archivo nunca queda vacío ni a medias) y
+// solo después borramos/recreamos. En los proveedores locales el document id se deriva
+// de la ruta, así que el archivo recreado conserva la MISMA URI.
+export async function writeVaultFile(
+  uri: string,
+  content: string,
+  dirUri?: string
+): Promise<string> {
   await SAF.writeAsStringAsync(uri, content);
+
+  const expected = utf8Length(content);
+  const actual = fileSize(uri);
+  if (actual <= expected || actual < 0) return uri; // sin cola sobrante
+
+  const name = fileNameFromUri(uri);
+  const ext = (name.split('.').pop() ?? '').toLowerCase();
+  const mime = RECREATE_MIME[ext];
+  const dir = dirUri ?? parentDirUri(uri);
+  // Sin carpeta conocida, o con una extensión que Android renombraría al recrear
+  // (.markdown/.mdx → .md), preferimos dejar la cola antes que perder o renombrar
+  // el archivo del usuario.
+  if (!dir || !mime) return uri;
+
+  await SAF.deleteAsync(uri);
+  try {
+    // Nombre COMPLETO (con extensión) y mime que le corresponde: así el proveedor
+    // reusa el nombre tal cual en vez de agregar otra extensión.
+    const recreated = await SAF.createFileAsync(dir, name, mime);
+    await SAF.writeAsStringAsync(recreated, content);
+    return recreated;
+  } catch {
+    // El original ya no existe: reintenta con nombre saneado antes que dejar la
+    // nota sin archivo. Si esto también falla, el error sube y la UI lo muestra.
+    const fallback = await SAF.createFileAsync(dir, sanitizeName(name.replace(MD_RE, '')), 'text/markdown');
+    await SAF.writeAsStringAsync(fallback, content);
+    return fallback;
+  }
+}
+
+function sanitizeName(baseName: string): string {
+  return baseName.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
 }
 
 // Crea un .md nuevo dentro de la carpeta y devuelve su URI.
@@ -154,8 +247,9 @@ export async function createVaultFile(
   baseName: string,
   content: string
 ): Promise<string> {
-  const safe = baseName.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
-  const uri = await SAF.createFileAsync(dirUri, safe, 'text/markdown');
+  // Con la extensión incluida: si el mapa de mimes de Android no conoce
+  // `text/markdown` (versiones viejas), sin ella el archivo se crearía SIN `.md`.
+  const uri = await SAF.createFileAsync(dirUri, `${sanitizeName(baseName)}.md`, 'text/markdown');
   await SAF.writeAsStringAsync(uri, content);
   return uri;
 }

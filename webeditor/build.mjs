@@ -1,5 +1,5 @@
-// Bundlea el editor Crepe a un HTML autónomo y lo escribe como string en
-// ../src/lib/webeditor-html.ts (embebido en el WebView del app, sin red).
+// Bundlea el editor Crepe a un HTML autónomo y lo escribe en ../assets/webeditor.html,
+// que el WebView del app carga como archivo (offline, sin red).
 import esbuild from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';

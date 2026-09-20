@@ -44,10 +44,14 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 
 - **Vault**: abrir una carpeta del teléfono (recursivo, subcarpetas) y editar los `.md`
   reales en sitio; **árbol** de carpetas colapsable. (Solo almacenamiento local, no Drive.)
-- **Importar** archivos `.md` sueltos (incl. desde Drive: copia local).
+- **Importar** archivos `.md` sueltos (incl. desde Drive: copia local), o abrirlos
+  desde otra app con "Abrir con MDNotes" / compartir (se importa una **copia**: el
+  intent no da permiso para editar el original en sitio).
 - Notas internas cuando no hay carpeta abierta. Crear / editar / eliminar.
 - **Guardado configurable**: autoguardado (con indicador "Guardando…/Guardado") o manual
-  con botón "Guardar". Se elige en Ajustes.
+  con botón "Guardar". Se elige en Ajustes. Si la escritura falla (carpeta no disponible,
+  archivo borrado desde otra app) se avisa y el texto se queda en pantalla — nunca dice
+  "Guardado" sin haber escrito.
 - **Editor de 3 modos** (toggle VIVO/MD/VER):
   - **VIVO** — WYSIWYG inspirado en Typora (Milkdown Crepe): editas sobre el documento renderizado,
     con callouts de color, imágenes, tablas, código, mates.

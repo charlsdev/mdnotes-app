@@ -47,10 +47,14 @@ export default function EditorScreen() {
   const autosave = useSettings((s) => s.autosave);
   const pdfMarginMm = useSettings((s) => s.pdfMarginMm);
   const readingScale = useSettings((s) => s.readingScale);
-  const { files, upsert, remove, vaultImages } = useFilesStore();
+  const { files, upsert, remove, vaultImages, readContent, loaded, load } = useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
   const [content, setContent] = useState('');
+  // Contenido tal cual está en disco: referencia para saber si hay cambios pendientes.
+  // (No se compara contra `file.content`, que en el store es la copia ligera.)
+  const savedRef = useRef('');
+  const [ready, setReady] = useState(false);
   // Nota nueva → CÓDIGO (escribir rápido); abrir existente → VER (leer). VIVO
   // (WYSIWYG) es opt-in por nota para no cargar el editor pesado sin querer.
   const [mode, setMode] = useState<EditorMode>(isNew ? 'code' : 'view');
@@ -75,17 +79,28 @@ export default function EditorScreen() {
     };
   }, [mode, content, file?.folder, vaultImages]);
 
-  // Al entrar a VIVO (o cambiar de nota), embebe las imágenes locales como data
-  // URI para que Crepe las muestre. NO depende de `content` (evita re-feed loop).
+  // Ref al contenido actual: lo lee el efecto de VIVO (que NO puede depender de
+  // `content` sin provocar un re-feed en cada tecla) y el guardado desde VIVO
+  // (para conservar el frontmatter). Se declara ANTES del efecto de VIVO a
+  // propósito: los efectos corren en orden de declaración, y si se sincronizara
+  // después, VIVO leería el contenido de la nota anterior al saltar de nota.
+  const contentRef = useRef(content);
   useEffect(() => {
-    if (mode !== 'live') {
+    contentRef.current = content;
+  }, [content]);
+
+  // Al entrar a VIVO (o cambiar de nota), embebe las imágenes locales como data
+  // URI para que Crepe las muestre. Depende de `ready`, no de `content`: hasta que
+  // la nota no terminó de leerse del disco, `contentRef` es de la nota anterior.
+  useEffect(() => {
+    if (mode !== 'live' || !ready) {
       setLiveMd(null);
       return;
     }
     let alive = true;
     setLiveMd(null);
     // El frontmatter (tags) NO va a Crepe (lo mostraría raro); se preserva al guardar.
-    inlineLocalImages(stripFrontmatter(content), file?.folder ?? '', vaultImages).then(({ md, restore }) => {
+    inlineLocalImages(stripFrontmatter(contentRef.current), file?.folder ?? '', vaultImages).then(({ md, restore }) => {
       if (!alive) return;
       imgRestore.current = restore;
       // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
@@ -100,13 +115,7 @@ export default function EditorScreen() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id, file?.folder, vaultImages]);
-
-  // Ref al contenido actual (para leer el frontmatter al guardar desde VIVO).
-  const contentRef = useRef(content);
-  useEffect(() => {
-    contentRef.current = content;
-  }, [content]);
+  }, [mode, id, ready, file?.folder, vaultImages]);
 
   // Cambio desde VIVO: (1) des-escapa alertas, quita `<br />`, restaura imágenes;
   // (2) re-antepone el frontmatter (tags) que Crepe no maneja.
@@ -129,20 +138,58 @@ export default function EditorScreen() {
   const loadedId = useRef<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Carga la nota; recarga si cambia `id` (al saltar de una nota a otra).
+  // Al entrar directo al editor (restauración de estado, enlace) la biblioteca
+  // puede no haber cargado todavía.
+  useEffect(() => {
+    if (!loaded) load();
+  }, [loaded, load]);
+
+  // Carga la nota; recarga si cambia `id` (al saltar de una nota a otra). El
+  // contenido se relee del disco: el del store es la copia ligera (sin los base64
+  // de las imágenes) y además así tomamos ediciones hechas fuera de la app.
   useEffect(() => {
     if (loadedId.current === id) return;
     const found = files.find((f) => f.id === id);
-    if (found) {
-      setFile(found);
-      setContent(found.content);
-      loadedId.current = id ?? null;
+    if (!found) {
+      // Con la biblioteca ya cargada, un id que no existe es una nota borrada o
+      // movida: avisamos en vez de dejar el spinner girando para siempre.
+      if (loaded) {
+        loadedId.current = id ?? null; // que no se repita el aviso si `files` cambia
+        appAlert('Esa nota ya no está', 'Puede haberse borrado o movido.', [
+          { text: 'Volver', onPress: () => router.back() },
+        ], { variant: 'error' });
+      }
+      return;
     }
-  }, [id, files]);
+    loadedId.current = id ?? null;
+    setFile(found);
+    setReady(false);
+    let alive = true;
+    readContent(found)
+      .then((full) => {
+        if (!alive) return;
+        savedRef.current = full;
+        setContent(full);
+        setReady(true);
+      })
+      .catch((e: any) => {
+        if (!alive) return;
+        appAlert(
+          'No pude abrir la nota',
+          `${e?.message ?? e}\n\nEl archivo pudo haberse movido o borrado desde otra app.`,
+          [{ text: 'Volver', onPress: () => router.back() }],
+          { variant: 'error' }
+        );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [id, files, loaded, readContent, router]);
 
-  // Persiste el contenido actual de inmediato. Devuelve true si guardó algo.
-  const doSave = useCallback(() => {
-    if (!file || content === file.content) return false;
+  // Persiste el contenido actual de inmediato. Devuelve false SOLO si la escritura
+  // falló (no hay nada que guardar también cuenta como éxito).
+  const doSave = useCallback(async (): Promise<boolean> => {
+    if (!file || !ready || content === savedRef.current) return true;
     const updated: MdFile = {
       ...file,
       content,
@@ -151,16 +198,33 @@ export default function EditorScreen() {
       tags: computeTags(content),
       updatedAt: Date.now(),
     };
-    upsert(updated);
-    setFile(updated);
-    setSaveState('saved');
-    return true;
-  }, [file, content, upsert]);
+    setSaveState('saving');
+    try {
+      // Nos quedamos con lo que devuelve el store: si el archivo hubo que recrearlo
+      // (ver `writeVaultFile`), la URI puede ser otra.
+      const saved = await upsert(updated);
+      // `content` es el de esta pasada: si el usuario siguió escribiendo, el effect
+      // detecta que hay cambios nuevos y vuelve a marcar pendiente.
+      savedRef.current = content;
+      setFile(saved);
+      setSaveState('saved');
+      return true;
+    } catch (e: any) {
+      setSaveState('dirty');
+      appAlert(
+        'No se pudo guardar',
+        `${e?.message ?? e}\n\nTu texto sigue aquí. Revisa que la carpeta siga disponible y vuelve a intentar.`,
+        undefined,
+        { variant: 'error' }
+      );
+      return false;
+    }
+  }, [file, content, ready, upsert]);
 
   // Marca estado + autoguarda con debounce (solo si autosave está activo).
   useEffect(() => {
-    if (!file) return;
-    if (content === file.content) {
+    if (!file || !ready) return;
+    if (content === savedRef.current) {
       setSaveState('saved');
       return;
     }
@@ -174,7 +238,7 @@ export default function EditorScreen() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [content, file, autosave, doSave]);
+  }, [content, file, ready, autosave, doSave]);
 
   // Aplica una edición y reposiciona el cursor de forma controlada.
   const applyEdit = useCallback((next: string, caret: number) => {
@@ -276,7 +340,7 @@ export default function EditorScreen() {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    doSave();
+    return doSave();
   };
 
   // Guardado manual desde el indicador/botón.
@@ -285,15 +349,15 @@ export default function EditorScreen() {
     flushSave();
   };
 
-  const goBack = () => {
-    flushSave();
-    router.back();
+  // Si el guardado falla nos quedamos en el editor: salir perdería el texto.
+  const goBack = async () => {
+    if (await flushSave()) router.back();
   };
 
   // Salta a otra nota reemplazando la actual (back vuelve a la biblioteca).
-  const switchTo = (note: MdFile) => {
+  const switchTo = async (note: MdFile) => {
     if (note.id === id) return;
-    flushSave();
+    if (!(await flushSave())) return;
     router.replace({ pathname: '/editor/[id]', params: { id: note.id } });
   };
 
@@ -305,14 +369,19 @@ export default function EditorScreen() {
         text: 'Eliminar',
         style: 'destructive',
         onPress: async () => {
-          await remove(file.id);
+          try {
+            await remove(file.id);
+          } catch (e: any) {
+            appAlert('No se pudo eliminar', String(e?.message ?? e), undefined, { variant: 'error' });
+            return;
+          }
           router.back();
         },
       },
     ]);
   };
 
-  if (!file) {
+  if (!file || !ready) {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: theme.bg }]}>
         <ActivityIndicator color={theme.accent} />
