@@ -12,6 +12,7 @@ import {
   attachmentFolderFromSetting,
   sanitizeFolderPath,
 } from '@/lib/paths';
+import { buildTreeRows } from '@/lib/tree';
 import type { MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
@@ -216,6 +217,81 @@ check('y ese enlace resuelve al archivo guardado',
 const written = encodeRef(relativeTo('README', 'adjuntos/imagen-20260919-214300.jpg'));
 const h16 = render(`![imagen](${written})`);
 check('el markdown generado produce un <img>', h16.includes('<img') && h16.includes(written), h16);
+
+// --- Árbol con varias carpetas abiertas ---
+
+const vNote = (id: string, name: string, vaultId: string, folder = ''): MdFile => ({
+  id, name, content: '', createdAt: 0, updatedAt: 0, folder, vaultId,
+});
+
+const multi = [
+  vNote('a1', 'Nota A', 'v1'),
+  vNote('a2', 'Sub A', 'v1', 'README'),
+  vNote('b1', 'Nota B', 'v2'),
+  vNote('b2', 'Sub B', 'v2', 'README'),
+  { id: 'i1', name: 'Interna', content: '', createdAt: 0, updatedAt: 0 } as MdFile,
+];
+const groups = [
+  { id: 'v1', name: 'Trabajo' },
+  { id: 'v2', name: 'Personal' },
+  { id: '', name: 'En el dispositivo' },
+];
+
+// 20. Una sola carpeta: el árbol no cambia (sin filas de vault)
+const single = buildTreeRows(multi.filter((n) => n.vaultId === 'v1'), new Set());
+check('con una sola carpeta no aparecen raíces de vault', !single.some((r) => r.kind === 'vault'),
+  JSON.stringify(single.map((r) => r.kind)));
+
+// 21. Varias carpetas: una raíz por carpeta, con sus notas debajo
+const rows = buildTreeRows(multi, new Set(), groups);
+const vaultRows = rows.filter((r) => r.kind === 'vault');
+check('una raíz por carpeta (incluidas las internas)', vaultRows.length === 3,
+  JSON.stringify(vaultRows.map((r) => r.name)));
+check('las raíces salen en el orden dado', vaultRows.map((r) => r.name).join(',') === 'Trabajo,Personal,En el dispositivo');
+check('cada raíz cuenta solo sus notas', vaultRows.every((r) => r.kind === 'vault' && r.count === (r.name === 'En el dispositivo' ? 1 : 2)),
+  JSON.stringify(vaultRows.map((r) => r.kind === 'vault' && r.count)));
+check('las notas quedan indentadas bajo su carpeta',
+  rows.filter((r) => r.kind === 'file').every((r) => r.depth >= 1));
+
+// 22. Colapsar una carpeta NO afecta a la otra (el bug clásico: mismo nombre de
+// subcarpeta en dos vaults compartiendo estado de colapso)
+const collapsedV1 = buildTreeRows(multi, new Set(['vault:v1']), groups);
+check('colapsar una carpeta oculta solo sus notas',
+  !collapsedV1.some((r) => r.kind === 'file' && r.note.vaultId === 'v1') &&
+    collapsedV1.some((r) => r.kind === 'file' && r.note.vaultId === 'v2'),
+  JSON.stringify(collapsedV1.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
+
+const folderRows = rows.filter((r) => r.kind === 'folder');
+check('dos carpetas con un README cada una son filas distintas',
+  folderRows.length === 2 && folderRows[0].kind === 'folder' && folderRows[1].kind === 'folder' &&
+    folderRows[0].path !== folderRows[1].path,
+  JSON.stringify(folderRows.map((r) => r.kind === 'folder' && r.path)));
+
+const collapsedReadmeV1 = buildTreeRows(multi, new Set([folderRows[0].kind === 'folder' ? folderRows[0].path : '']), groups);
+check('colapsar el README de una carpeta no colapsa el de la otra',
+  collapsedReadmeV1.filter((r) => r.kind === 'file' && r.note.folder === 'README').length === 1,
+  JSON.stringify(collapsedReadmeV1.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
+
+// 23. Una carpeta sin notas (o filtrada) no deja una raíz vacía
+const onlyV2 = buildTreeRows(multi.filter((n) => n.vaultId === 'v2'), new Set(), groups);
+check('no se muestran raíces de carpetas sin notas',
+  onlyV2.filter((r) => r.kind === 'vault').length === 1,
+  JSON.stringify(onlyV2.filter((r) => r.kind === 'vault').map((r) => r.name)));
+
+// 24. Los [[enlaces]] no cruzan carpetas
+const linked = [
+  vNote('a1', 'Compartida', 'v1'),
+  vNote('b1', 'Compartida', 'v2'),
+  vNote('b2', 'Desde B', 'v2'),
+];
+const idxV2 = buildLinkIndex(linked.filter((n) => n.vaultId === 'v2'));
+check('un [[enlace]] resuelve dentro de SU carpeta',
+  resolveWikilink('Compartida', '', idxV2) === 'b1', String(resolveWikilink('Compartida', '', idxV2)));
+const idxV1 = buildLinkIndex(linked.filter((n) => n.vaultId === 'v1'));
+check('y en la otra carpeta resuelve a la suya',
+  resolveWikilink('Compartida', '', idxV1) === 'a1', String(resolveWikilink('Compartida', '', idxV1)));
+check('una nota que solo existe en otra carpeta queda como enlace roto',
+  resolveWikilink('Desde B', '', idxV1) === null);
 
 console.log(failed === 0 ? '\nTODO OK' : `\n${failed} FALLAS`);
 process.exit(failed === 0 ? 0 : 1);

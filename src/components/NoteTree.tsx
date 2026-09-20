@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, FlatList } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing } from '@/theme';
 import { MdFile } from '@/types';
-import { buildTreeRows } from '@/lib/tree';
+import { buildTreeRows, type TreeGroup } from '@/lib/tree';
 
 function Chevron({ open, color }: { open: boolean; color: string }) {
   return (
@@ -22,6 +22,7 @@ export function NoteTree({
   currentId,
   header,
   footer,
+  groups,
 }: {
   notes: MdFile[];
   onSelect: (note: MdFile) => void;
@@ -29,11 +30,13 @@ export function NoteTree({
   currentId?: string;
   header?: React.ReactElement;
   footer?: React.ReactElement;
+  // Carpetas abiertas. Con más de una, el árbol antepone una raíz por carpeta.
+  groups?: TreeGroup[];
 }) {
   const theme = useTheme();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const rows = useMemo(() => buildTreeRows(notes, collapsed), [notes, collapsed]);
+  const rows = useMemo(() => buildTreeRows(notes, collapsed, groups), [notes, collapsed, groups]);
 
   const toggle = (path: string) =>
     setCollapsed((prev) => {
@@ -53,6 +56,27 @@ export function NoteTree({
       contentContainerStyle={{ paddingBottom: 100 }}
       renderItem={({ item }) => {
         const indent = spacing.lg + item.depth * 16;
+        // Raíz de una carpeta abierta: se distingue de una subcarpeta normal
+        // (acento + mayúsculas), si no todo parece el mismo nivel.
+        if (item.kind === 'vault') {
+          const open = !collapsed.has(item.path);
+          return (
+            <Pressable
+              onPress={() => toggle(item.path)}
+              style={({ pressed }) => [
+                styles.vaultRow,
+                { borderBottomColor: theme.line, paddingLeft: spacing.lg },
+                pressed && { backgroundColor: theme.bg2 },
+              ]}
+            >
+              <Chevron open={open} color={theme.accent} />
+              <Text style={[styles.vaultName, { color: theme.accent }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={[styles.count, { color: theme.muted }]}>{item.count}</Text>
+            </Pressable>
+          );
+        }
         if (item.kind === 'folder') {
           const open = !collapsed.has(item.path);
           return (
@@ -93,6 +117,15 @@ export function NoteTree({
 }
 
 const styles = StyleSheet.create({
+  vaultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: spacing.lg,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  vaultName: { flex: 1, fontFamily: fonts.monoMedium, fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase' },
   folderRow: {
     flexDirection: 'row',
     alignItems: 'center',

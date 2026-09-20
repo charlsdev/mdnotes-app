@@ -16,6 +16,10 @@ export interface MdFile {
   // URI SAF de la carpeta que contiene el archivo. Necesaria para recrearlo cuando
   // hay que truncarlo (ver `writeVaultFile`).
   dirUri?: string;
+  // Cuál de las carpetas abiertas la contiene (`vaultIdForUri` de la raíz). Define
+  // dónde van sus adjuntos, contra qué índice se resuelven sus imágenes y hasta
+  // dónde llegan sus [[enlaces]] — que NO cruzan de una carpeta a otra.
+  vaultId?: string;
   // Ruta relativa de subcarpetas dentro del vault ('' = raíz, 'Proyectos/Ideas').
   folder?: string;
 }

@@ -16,7 +16,9 @@ import {
   DEFAULT_ATTACHMENT_FOLDER,
 } from '@/lib/paths';
 
-const VAULT_KEY = 'mdnotes:vault-uri';
+const VAULTS_KEY = 'mdnotes:vaults'; // JSON con las URIs de las carpetas abiertas
+const LEGACY_VAULT_KEY = 'mdnotes:vault-uri'; // versión de una sola carpeta
+const LAST_VAULT_KEY = 'mdnotes:last-vault'; // dónde se creó la última nota
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 const SAF = FileSystem.StorageAccessFramework;
@@ -37,21 +39,48 @@ export function vaultSupported(): boolean {
   return Platform.OS === 'android' && !!SAF;
 }
 
-export async function getVaultUri(): Promise<string | null> {
-  return AsyncStorage.getItem(VAULT_KEY);
+// Carpetas abiertas, en el orden en que se abrieron. Migra la clave de la época
+// de una sola carpeta (si existía, esa pasa a ser la primera de la lista).
+export async function getVaultUris(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(VAULTS_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((u): u is string => typeof u === 'string');
+    } catch {
+      // JSON corrupto: seguimos con la migración/lista vacía
+    }
+  }
+  const legacy = await AsyncStorage.getItem(LEGACY_VAULT_KEY);
+  if (legacy) {
+    await setVaultUris([legacy]);
+    await AsyncStorage.removeItem(LEGACY_VAULT_KEY);
+    return [legacy];
+  }
+  return [];
 }
 
-// Abre el selector de carpetas de Android y persiste el permiso concedido.
+export async function setVaultUris(uris: string[]): Promise<void> {
+  await AsyncStorage.setItem(VAULTS_KEY, JSON.stringify(uris));
+}
+
+// Abre el selector de carpetas de Android. NO persiste: de eso se encarga el
+// store, que primero verifica que la carpeta se pueda leer.
 export async function pickVault(): Promise<string | null> {
   if (!vaultSupported()) return null;
   const perm = await SAF.requestDirectoryPermissionsAsync();
   if (!perm.granted) return null;
-  await AsyncStorage.setItem(VAULT_KEY, perm.directoryUri);
   return perm.directoryUri;
 }
 
-export async function clearVault(): Promise<void> {
-  await AsyncStorage.removeItem(VAULT_KEY);
+// Última carpeta donde se creó una nota: con varias abiertas, es la que se ofrece
+// primero al preguntar el destino.
+export async function getLastVaultId(): Promise<string | null> {
+  return AsyncStorage.getItem(LAST_VAULT_KEY);
+}
+
+export async function setLastVaultId(id: string): Promise<void> {
+  await AsyncStorage.setItem(LAST_VAULT_KEY, id);
 }
 
 // Nombre legible de la carpeta a partir del tree URI de SAF.
@@ -92,6 +121,7 @@ async function isDirectory(uri: string, name: string): Promise<boolean> {
 // imágenes (ruta relativa → URI) para poder resolverlas en el preview.
 // La raíz propaga errores (ej. Drive).
 export async function listVault(rootUri: string): Promise<VaultScan> {
+  const vaultId = vaultIdForUri(rootUri);
   const out: MdFile[] = [];
   const images: Record<string, string> = {};
   let mdSeen = 0;
@@ -119,6 +149,7 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
             id: vaultIdForUri(uri),
             uri,
             dirUri,
+            vaultId,
             name: name.replace(MD_RE, ''),
             // Copia ligera para listar/buscar; el editor relee el archivo completo.
             content: elideDataUris(content),

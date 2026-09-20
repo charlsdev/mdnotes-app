@@ -4,26 +4,39 @@ import * as FilesAPI from '@/storage/files';
 import * as Vault from '@/storage/vault';
 import { computeTags, elideDataUris } from '@/utils/text';
 
+// Una carpeta abierta. `id` es el hash de su URI raíz: es lo que llevan las notas
+// en `vaultId` y lo que usa el árbol para agruparlas.
+export interface VaultRef {
+  id: string;
+  uri: string;
+  name: string;
+}
+
 interface FilesState {
   files: MdFile[];
   loading: boolean;
   loaded: boolean;
-  vaultUri: string | null;
-  vaultName: string | null;
-  vaultImages: Record<string, string>;
+  vaults: VaultRef[];
+  // Índice de imágenes POR carpeta: dos carpetas pueden tener un `img/logo.png`
+  // cada una, y un índice plano mostraría la imagen equivocada.
+  vaultImages: Record<string, Record<string, string>>;
+  // Carpeta donde se creó la última nota (se ofrece primero al preguntar destino).
+  lastVaultId: string | null;
   load: () => Promise<void>;
-  // Devuelve cuántos .md encontró (null si se canceló). Lanza si no puede leer.
-  openVault: () => Promise<number | null>;
-  closeVault: () => Promise<void>;
+  // Abre otra carpeta. Devuelve cuántos .md encontró (null si se canceló).
+  // Lanza si no se puede leer.
+  openVault: () => Promise<{ name: string; count: number; already?: boolean } | null>;
+  closeVault: (vaultId: string) => Promise<void>;
   // Contenido COMPLETO desde el disco (el de `files` es la copia ligera).
   readContent: (file: MdFile) => Promise<string>;
   // Registra un adjunto recién creado para que el preview lo resuelva sin re-escanear.
-  addVaultImage: (relPath: string, uri: string) => void;
+  addVaultImage: (vaultId: string, relPath: string, uri: string) => void;
   // Devuelve la nota como quedó (la URI puede cambiar si hubo que recrear el archivo).
   upsert: (file: MdFile) => Promise<MdFile>;
   remove: (id: string) => Promise<void>;
-  create: (name?: string) => Promise<MdFile>;
-  createWith: (name: string, content: string) => Promise<MdFile>;
+  // `vaultId` decide en qué carpeta abierta se crea; sin él (o sin carpetas), interna.
+  create: (name?: string, vaultId?: string) => Promise<MdFile>;
+  createWith: (name: string, content: string, vaultId?: string) => Promise<MdFile>;
 }
 
 const STARTER = '# Nueva nota\n\nEscribe en Markdown. Alterna VIVO / MD / VER arriba a la derecha.';
@@ -51,75 +64,97 @@ export const useFilesStore = create<FilesState>((set, get) => ({
   files: [],
   loading: false,
   loaded: false,
-  vaultUri: null,
-  vaultName: null,
+  vaults: [],
   vaultImages: {},
+  lastVaultId: null,
 
   load: async () => {
     set({ loading: true });
-    let vaultUri = await Vault.getVaultUri();
+    const uris = await Vault.getVaultUris();
     const internal = await FilesAPI.listFiles();
-    let vaultFiles: MdFile[] = [];
-    let images: Record<string, string> = {};
-    if (vaultUri) {
+    const vaults: VaultRef[] = [];
+    const vaultFiles: MdFile[] = [];
+    const images: Record<string, Record<string, string>> = {};
+
+    for (const uri of uris) {
       try {
-        const scan = await Vault.listVault(vaultUri);
-        vaultFiles = scan.files;
-        images = scan.images;
+        const scan = await Vault.listVault(uri);
+        const id = Vault.vaultIdForUri(uri);
+        vaults.push({ id, uri, name: Vault.vaultName(uri) });
+        vaultFiles.push(...scan.files);
+        images[id] = scan.images;
       } catch {
-        // Permiso perdido (carpeta movida / revocada): olvidamos el vault.
-        await Vault.clearVault();
-        vaultUri = null;
+        // Permiso perdido (carpeta movida / revocada): olvidamos ESA carpeta y
+        // seguimos con el resto — una rota no puede dejarte sin las demás.
       }
     }
+    if (vaults.length !== uris.length) {
+      await Vault.setVaultUris(vaults.map((v) => v.uri));
+    }
+
     set({
       files: [...vaultFiles, ...internal].sort(byRecent),
-      vaultUri,
-      vaultName: vaultUri ? Vault.vaultName(vaultUri) : null,
+      vaults,
       vaultImages: images,
+      lastVaultId: await Vault.getLastVaultId(),
       loading: false,
       loaded: true,
     });
   },
 
-  // Abre (o cambia) la carpeta vault. Lista sus .md aquí mismo (sin tragar
-  // errores) para poder dar feedback real. Lanza si SAF no puede leer la carpeta.
+  // Abre OTRA carpeta (se suman, no se reemplazan). Lista sus .md aquí mismo (sin
+  // tragar errores) para poder dar feedback real. Lanza si SAF no puede leerla.
   openVault: async () => {
     const uri = await Vault.pickVault();
     if (!uri) return null;
+    const id = Vault.vaultIdForUri(uri);
+    if (get().vaults.some((v) => v.id === id)) {
+      const name = Vault.vaultName(uri);
+      return { name, count: get().files.filter((f) => f.vaultId === id).length, already: true };
+    }
     set({ loading: true }); // escanear la carpeta (leer los .md) puede tardar
     try {
       const scan = await Vault.listVault(uri);
-      const internal = await FilesAPI.listFiles();
+      const vault: VaultRef = { id, uri, name: Vault.vaultName(uri) };
+      const vaults = [...get().vaults, vault];
+      await Vault.setVaultUris(vaults.map((v) => v.uri));
       set({
-        vaultUri: uri,
-        vaultName: Vault.vaultName(uri),
-        files: [...scan.files, ...internal].sort(byRecent),
-        vaultImages: scan.images,
+        vaults,
+        files: [...scan.files, ...get().files].sort(byRecent),
+        vaultImages: { ...get().vaultImages, [id]: scan.images },
         loaded: true,
         loading: false,
       });
-      return scan.files.length;
+      return { name: vault.name, count: scan.files.length };
     } catch (e) {
       // No dejes persistida una carpeta que no se puede leer (ej. Google Drive).
-      await Vault.clearVault();
-      set({ vaultUri: null, vaultName: null, loading: false });
+      // Las que ya estaban abiertas no se tocan.
+      set({ loading: false });
       throw e;
     }
   },
 
-  closeVault: async () => {
-    await Vault.clearVault();
-    set({ vaultUri: null, vaultName: null });
-    await get().load();
+  // Cierra una carpeta: saca sus notas de la lista sin re-escanear las demás.
+  closeVault: async (vaultId) => {
+    const vaults = get().vaults.filter((v) => v.id !== vaultId);
+    await Vault.setVaultUris(vaults.map((v) => v.uri));
+    const images = { ...get().vaultImages };
+    delete images[vaultId];
+    set({
+      vaults,
+      files: get().files.filter((f) => f.vaultId !== vaultId),
+      vaultImages: images,
+      lastVaultId: get().lastVaultId === vaultId ? null : get().lastVaultId,
+    });
   },
 
   readContent: async (file) => {
     return file.uri ? Vault.readVaultFile(file.uri) : FilesAPI.readContent(file.id);
   },
 
-  addVaultImage: (relPath, uri) => {
-    set({ vaultImages: { ...get().vaultImages, [relPath]: uri } });
+  addVaultImage: (vaultId, relPath, uri) => {
+    const images = get().vaultImages;
+    set({ vaultImages: { ...images, [vaultId]: { ...(images[vaultId] ?? {}), [relPath]: uri } } });
   },
 
   // Persiste el .md y refleja el resultado en la lista. LANZA si la escritura
@@ -148,68 +183,59 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       set({ files: get().files.filter((f) => f.id !== id) });
     }),
 
-  create: async (name) => {
-    const now = Date.now();
-    const vaultUri = get().vaultUri;
-    // Con carpeta abierta, la nota nueva es un archivo real dentro de ella.
-    if (vaultUri) {
-      const uri = await Vault.createVaultFile(vaultUri, name ?? 'Nueva nota', STARTER);
-      const file: MdFile = {
-        id: Vault.vaultIdForUri(uri),
-        uri,
-        dirUri: vaultUri,
-        name: name ?? 'Nueva nota',
-        content: STARTER,
-        createdAt: now,
-        updatedAt: now,
-        tags: [],
-      };
-      set({ files: [file, ...get().files] });
-      return file;
-    }
-    const file: MdFile = {
-      id: FilesAPI.newFileId(),
-      name: name ?? 'Nueva nota',
-      content: STARTER,
-      createdAt: now,
-      updatedAt: now,
-      tags: [],
-    };
-    await FilesAPI.saveFile(file);
-    set({ files: [file, ...get().files] });
-    return file;
-  },
+  create: (name, vaultId) => queued(() => createNote(set, get, name ?? 'Nueva nota', STARTER, vaultId)),
 
-  // Importa una nota (nombre + contenido). Con vault abierto, la escribe como
-  // archivo real en la carpeta; si no, la guarda interna.
-  createWith: async (name, content) => {
-    const now = Date.now();
-    const vaultUri = get().vaultUri;
-    if (vaultUri) {
-      const uri = await Vault.createVaultFile(vaultUri, name || 'Importada', content);
-      const file: MdFile = {
-        id: Vault.vaultIdForUri(uri),
-        uri,
-        dirUri: vaultUri,
-        name: name || 'Importada',
-        content: elideDataUris(content),
-        createdAt: now,
-        updatedAt: now,
-        tags: computeTags(content),
-      };
-      set({ files: [file, ...get().files] });
-      return file;
-    }
+  // Importa una nota (nombre + contenido). Con carpeta abierta, la escribe como
+  // archivo real dentro de ella; si no, la guarda interna.
+  createWith: (name, content, vaultId) =>
+    queued(() => createNote(set, get, name || 'Importada', content, vaultId)),
+}));
+
+// Crea la nota en la carpeta indicada (o interna si no hay). Es común a "nota
+// nueva" e "importar": la única diferencia entre ambas era el contenido inicial.
+async function createNote(
+  set: (partial: Partial<FilesState>) => void,
+  get: () => FilesState,
+  name: string,
+  content: string,
+  vaultId?: string
+): Promise<MdFile> {
+  const now = Date.now();
+  // Sin destino explícito: la última usada, y si no hay, la única abierta. Con
+  // varias abiertas y sin recuerdo, la biblioteca pregunta antes de llegar acá.
+  const vaults = get().vaults;
+  const target =
+    vaults.find((v) => v.id === vaultId) ??
+    vaults.find((v) => v.id === get().lastVaultId) ??
+    (vaults.length === 1 ? vaults[0] : undefined);
+
+  if (target) {
+    const uri = await Vault.createVaultFile(target.uri, name, content);
     const file: MdFile = {
-      id: FilesAPI.newFileId(),
-      name: name || 'Importada',
-      content,
+      id: Vault.vaultIdForUri(uri),
+      uri,
+      dirUri: target.uri,
+      vaultId: target.id,
+      name,
+      content: elideDataUris(content),
       createdAt: now,
       updatedAt: now,
       tags: computeTags(content),
     };
-    await FilesAPI.saveFile(file);
-    set({ files: [{ ...file, content: elideDataUris(content) }, ...get().files] });
-    return file;
-  },
-}));
+    await Vault.setLastVaultId(target.id);
+    set({ files: [file, ...get().files], lastVaultId: target.id });
+    return { ...file, content };
+  }
+
+  const file: MdFile = {
+    id: FilesAPI.newFileId(),
+    name,
+    content,
+    createdAt: now,
+    updatedAt: now,
+    tags: computeTags(content),
+  };
+  await FilesAPI.saveFile(file);
+  set({ files: [{ ...file, content: elideDataUris(content) }, ...get().files] });
+  return file;
+}

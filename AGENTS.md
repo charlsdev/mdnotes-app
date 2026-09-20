@@ -70,7 +70,8 @@ con logos/iconos). Está excluido en **4 sitios**, mantenlos sincronizados:
 `MdFile` (`src/types`) puede ser:
 - **Interna**: `id` corto aleatorio, vive en `documentDirectory` (`src/storage/files.ts`).
 - **Vault**: `uri` = URI SAF del archivo real; `folder` = ruta relativa dentro de la
-  carpeta abierta. Editar/crear/borrar opera sobre el `.md` real.
+  carpeta abierta; `vaultId` = cuál de las carpetas abiertas la contiene. Editar/crear/
+  borrar opera sobre el `.md` real.
 
 El `store` es **vault-aware**: si `file.uri` existe → operación SAF; si no → interna.
 Ambas se muestran mezcladas. Al crear/importar con un vault abierto, el archivo se
@@ -97,7 +98,32 @@ decía "Guardado" con el archivo intacto.
 ### Vault (Storage Access Framework) — `src/storage/vault.ts`
 - "Abrir carpeta" → `requestDirectoryPermissionsAsync` (el picker deja elegir
   CUALQUIER carpeta del teléfono: interno, Descargas, Documentos, SD). El permiso
-  se **persiste** en AsyncStorage (`mdnotes:vault-uri`), sobrevive reinicios.
+  se **persiste** en AsyncStorage, sobrevive reinicios.
+
+### Varias carpetas a la vez
+El store tiene `vaults: VaultRef[]` (`{id, uri, name}`, `id = vaultIdForUri(raíz)`),
+persistido como JSON en `mdnotes:vaults`. `getVaultUris()` **migra** la clave vieja de una
+sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
+- Cada nota lleva `vaultId`. Eso define **cuatro** cosas, y mezclarlas es el error a
+  evitar: dónde se crea, dónde van sus adjuntos, contra qué índice de imágenes se
+  resuelve y hasta dónde llegan sus `[[enlaces]]`.
+- **Los enlaces NO cruzan carpetas** (`buildLinkIndex(vaultFiles)` en el editor). Un
+  enlace que funcione acá pero no en Obsidian sería peor que uno roto: en Obsidian un
+  vault es un mundo cerrado.
+- `vaultImages` es `Record<vaultId, Record<relPath, uri>>`. Con un índice plano, dos
+  carpetas con un `img/logo.png` cada una mostrarían la imagen equivocada.
+- **Notas nuevas**: con más de una carpeta abierta la biblioteca PREGUNTA destino
+  (`chooseVault`, con la última usada primero; `lastVaultId` se persiste). Importar
+  pregunta igual. La excepción es abrir un `.md` desde otra app: ahí va a la última
+  usada sin preguntar, porque el usuario espera ver el archivo, no un diálogo.
+- Si una carpeta no se puede leer al arrancar (permiso perdido), se descarta **solo
+  esa** y el resto carga igual.
+- El **árbol** antepone una raíz por carpeta solo cuando hay más de una
+  (`buildTreeRows(notes, collapsed, groups)`); con una sola se ve como siempre. Los
+  estados de colapso van prefijados por carpeta: dos vaults con un `README` cada uno
+  no comparten colapso (hay casos de prueba para eso).
+- El escaneo es por carpeta y secuencial: N carpetas grandes = N veces el arranque.
+  Es el motivo más fuerte para hacer el escaneo incremental por `mtime`.
 - **Escaneo RECURSIVO**: lee los `.md` de la carpeta y subcarpetas (cap depth 8 /
   1000 archivos). Detecta subcarpeta con heurística (sin extensión → intenta listar).
 - **Fechas reales**: el escaneo toma `modificationTime` del archivo con la API NUEVA de

@@ -3,6 +3,7 @@ import { Modal, View, Text, TextInput, Pressable, StyleSheet, StatusBar, Platfor
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { MdFile } from '@/types';
 import { NoteTree } from './NoteTree';
+import type { TreeGroup } from '@/lib/tree';
 import { Footer } from './Footer';
 
 // Cajón deslizante con el árbol de notas — para saltar de un .md a otro desde
@@ -16,6 +17,7 @@ export function NoteTreeDrawer({
   onClose,
   topInset = 0,
   bottomInset = 0,
+  groups,
 }: {
   visible: boolean;
   notes: MdFile[];
@@ -24,6 +26,8 @@ export function NoteTreeDrawer({
   onClose: () => void;
   topInset?: number;
   bottomInset?: number;
+  // Carpetas abiertas: con más de una, el árbol del cajón también las separa.
+  groups?: TreeGroup[];
 }) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -64,6 +68,7 @@ export function NoteTreeDrawer({
           </View>
           <NoteTree
             notes={filtered}
+            groups={groups}
             currentId={currentId}
             onSelect={(n) => {
               onSelect(n);

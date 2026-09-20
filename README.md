@@ -42,8 +42,11 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 
 ## Funcionalidades
 
-- **Vault**: abrir una carpeta del teléfono (recursivo, subcarpetas) y editar los `.md`
-  reales en sitio; **árbol** de carpetas colapsable. (Solo almacenamiento local, no Drive.)
+- **Vault**: abrir carpetas del teléfono (recursivo, subcarpetas) y editar los `.md`
+  reales en sitio; **árbol** colapsable. (Solo almacenamiento local, no Drive.)
+- **Varias carpetas a la vez**: el árbol las separa por carpeta y, al crear o importar,
+  la app pregunta en cuál va (ofreciendo primero la última que usaste). Cada carpeta es
+  un mundo: sus imágenes, sus adjuntos y sus `[[enlaces]]` no se mezclan con los de otra.
 - **Importar** archivos `.md` sueltos (incl. desde Drive: copia local), o abrirlos
   desde otra app con "Abrir con MDNotes" / compartir (se importa una **copia**: el
   intent no da permiso para editar el original en sitio).

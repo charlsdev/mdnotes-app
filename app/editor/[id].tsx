@@ -52,7 +52,7 @@ export default function EditorScreen() {
   const readingScale = useSettings((s) => s.readingScale);
   const attachmentMode = useSettings((s) => s.attachmentMode);
   const attachmentFolderPref = useSettings((s) => s.attachmentFolder);
-  const { files, upsert, remove, vaultImages, vaultUri, addVaultImage, readContent, loaded, load } =
+  const { files, upsert, remove, vaultImages, vaults, addVaultImage, readContent, loaded, load } =
     useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
@@ -74,18 +74,39 @@ export default function EditorScreen() {
   const [liveMd, setLiveMd] = useState<string | null>(null);
   const imgRestore = useRef<Array<[string, string]>>([]);
 
+  // Todo lo que sigue es RELATIVO A LA CARPETA de la nota: sus imágenes, sus
+  // adjuntos y sus enlaces. Con varias carpetas abiertas, mezclarlas mostraría
+  // imágenes de otra carpeta y crearía enlaces que Obsidian no podría resolver.
+  const vault = useMemo(() => vaults.find((v) => v.id === file?.vaultId), [vaults, file?.vaultId]);
+  const noteImages = useMemo(
+    () => (file?.vaultId ? (vaultImages[file.vaultId] ?? {}) : {}),
+    [vaultImages, file?.vaultId]
+  );
+  const vaultFiles = useMemo(
+    () => files.filter((f) => (f.vaultId ?? '') === (file?.vaultId ?? '')),
+    [files, file?.vaultId]
+  );
+
+  // Para el cajón (saltar de nota): con varias carpetas, separadas por carpeta.
+  const treeGroups = useMemo(() => {
+    if (vaults.length < 2) return undefined;
+    const groups = vaults.map((v) => ({ id: v.id, name: v.name }));
+    if (files.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
+    return groups;
+  }, [vaults, files]);
+
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
   // antes de pasar el contenido al preview (el WebView no lee content:// sueltos).
   useEffect(() => {
     if (mode !== 'view') return;
     let alive = true;
-    inlineLocalImages(content, file?.folder ?? '', vaultImages).then(({ md }) => {
+    inlineLocalImages(content, file?.folder ?? '', noteImages).then(({ md }) => {
       if (alive) setRendered(md);
     });
     return () => {
       alive = false;
     };
-  }, [mode, content, file?.folder, vaultImages]);
+  }, [mode, content, file?.folder, noteImages]);
 
   // Ref al contenido actual: lo lee el efecto de VIVO (que NO puede depender de
   // `content` sin provocar un re-feed en cada tecla) y el guardado desde VIVO
@@ -108,7 +129,7 @@ export default function EditorScreen() {
     let alive = true;
     setLiveMd(null);
     // El frontmatter (tags) NO va a Crepe (lo mostraría raro); se preserva al guardar.
-    inlineLocalImages(stripFrontmatter(contentRef.current), file?.folder ?? '', vaultImages).then(({ md, restore }) => {
+    inlineLocalImages(stripFrontmatter(contentRef.current), file?.folder ?? '', noteImages).then(({ md, restore }) => {
       if (!alive) return;
       imgRestore.current = restore;
       // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
@@ -123,7 +144,7 @@ export default function EditorScreen() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id, ready, file?.folder, vaultImages]);
+  }, [mode, id, ready, file?.folder, noteImages]);
 
   // Cambio desde VIVO: (1) des-escapa alertas, quita `<br />`, restaura imágenes;
   // (2) re-antepone el frontmatter (tags) que Crepe no maneja.
@@ -137,14 +158,14 @@ export default function EditorScreen() {
   }, []);
 
   // --- Enlaces internos [[nota]] ---
-  const linkIndex = useMemo(() => buildLinkIndex(files), [files]);
+  const linkIndex = useMemo(() => buildLinkIndex(vaultFiles), [vaultFiles]);
   const resolveLink = useCallback(
     (target: string) => resolveWikilink(target, file?.folder ?? '', linkIndex),
     [linkIndex, file?.folder]
   );
   const backlinks = useMemo(
-    () => (file ? backlinksFor(file.id, files, linkIndex).map((n) => ({ id: n.id, name: n.name })) : []),
-    [file, files, linkIndex]
+    () => (file ? backlinksFor(file.id, vaultFiles, linkIndex).map((n) => ({ id: n.id, name: n.name })) : []),
+    [file, vaultFiles, linkIndex]
   );
 
   // Tags editables (en el frontmatter del contenido).
@@ -357,7 +378,7 @@ export default function EditorScreen() {
   const handleExportPDF = async () => {
     if (!file) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', vaultImages);
+    const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', noteImages);
     const { uri } = await Print.printToFileAsync({
       html: mdToHtml(resolved, 'pdf', { pdfMarginMm, resolveLink }),
     });
@@ -384,19 +405,19 @@ export default function EditorScreen() {
     });
     if (!out.base64) return;
 
-    if (vaultUri && file?.uri) {
+    if (vault && file?.uri) {
       try {
         const noteFolder = file.folder ?? '';
         // El ajuste manda; si está en automático, se deduce de la config de Obsidian
-        // o de la convención que ya usan las notas (índice de imágenes del escaneo).
+        // o de la convención que ya usan las notas DE ESTA carpeta.
         const folder = await attachmentFolderFor(
-          vaultUri,
+          vault.uri,
           noteFolder,
-          Object.keys(vaultImages),
+          Object.keys(noteImages),
           attachmentFolderFromSetting(attachmentMode, attachmentFolderPref, noteFolder)
         );
-        const saved = await saveVaultImage(vaultUri, folder, imageBaseName(), out.base64);
-        addVaultImage(saved.relPath, saved.uri);
+        const saved = await saveVaultImage(vault.uri, folder, imageBaseName(), out.base64);
+        addVaultImage(vault.id, saved.relPath, saved.uri);
         onInsert(`\n![imagen](${encodeRef(relativeTo(noteFolder, saved.relPath))})\n`);
         return;
       } catch (e: any) {
@@ -500,6 +521,7 @@ export default function EditorScreen() {
       <NoteTreeDrawer
         visible={drawerOpen}
         notes={files}
+        groups={treeGroups}
         currentId={id}
         onSelect={switchTo}
         onClose={() => setDrawerOpen(false)}

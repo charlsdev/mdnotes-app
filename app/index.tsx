@@ -58,7 +58,7 @@ function GearIcon({ color }: { color: string }) {
 export default function LibraryScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { files, loaded, loading, load, create, createWith, remove, vaultUri, vaultName, openVault, closeVault } =
+  const { files, loaded, loading, load, create, createWith, remove, vaults, lastVaultId, openVault, closeVault } =
     useFilesStore();
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -74,6 +74,15 @@ export default function LibraryScreen() {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [files]);
 
+  // Con más de una carpeta abierta el árbol agrupa por carpeta; las notas internas
+  // van a un grupo propio al final. Con una sola, sin grupos (el árbol de siempre).
+  const treeGroups = useMemo(() => {
+    if (vaults.length < 2) return undefined;
+    const groups = vaults.map((v) => ({ id: v.id, name: v.name }));
+    if (files.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
+    return groups;
+  }, [vaults, files]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return files.filter((f) => {
@@ -83,9 +92,33 @@ export default function LibraryScreen() {
     });
   }, [files, query, tagFilter]);
 
+  // Con varias carpetas abiertas preguntamos SIEMPRE dónde va la nota: escribir en
+  // la carpeta equivocada se descubre tarde. La última usada va primero.
+  // Resuelve al id elegido, o `null` si se canceló. Sin carpetas, undefined (interna).
+  const chooseVault = (title: string): Promise<string | null | undefined> =>
+    new Promise((resolve) => {
+      if (vaults.length <= 1) {
+        resolve(vaults[0]?.id);
+        return;
+      }
+      const ordered = [...vaults].sort((a, b) => (a.id === lastVaultId ? -1 : b.id === lastVaultId ? 1 : 0));
+      appAlert(
+        title,
+        '¿En cuál de tus carpetas?',
+        [
+          ...ordered.map((v) => ({ text: v.name, onPress: () => resolve(v.id) })),
+          { text: 'Cancelar', style: 'cancel' as const, onPress: () => resolve(null) },
+        ],
+        // Sin descartar tocando afuera: si no, la promesa quedaría colgada.
+        { variant: 'info', dismissable: false }
+      );
+    });
+
   const handleCreate = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const file = await create();
+    const target = await chooseVault('Nota nueva');
+    if (target === null) return;
+    const file = await create(undefined, target);
     // `new` → el editor arranca en EDIT (nota recién creada); abrir existente → VIEW.
     router.push({ pathname: '/editor/[id]', params: { id: file.id, new: '1' } });
   };
@@ -108,6 +141,8 @@ export default function LibraryScreen() {
       handledUrl.current = url;
       try {
         const content = await FileSystem.readAsStringAsync(url);
+        // Acá NO preguntamos carpeta: el usuario viene de otra app esperando ver el
+        // archivo, no un diálogo. Va a la última carpeta usada (o interna si no hay).
         const file = await createWith(nameFromUri(url) || deriveName(content), content);
         openNote(file);
       } catch (e: any) {
@@ -124,39 +159,67 @@ export default function LibraryScreen() {
     return () => sub.remove();
   }, [createWith, openNote]);
 
-  // Botón de carpeta: sin vault abre una (Android) o importa archivos (iOS); con
-  // vault abierto muestra el menú de la carpeta.
+  // Botón de carpeta: sin carpetas abre una (Android) o importa archivos (iOS);
+  // con carpetas abiertas, el menú para abrir otra, importar o cerrar alguna.
   const handleFolderPress = () => {
-    if (!vaultUri) {
+    if (vaults.length === 0) {
       if (Platform.OS === 'android') openFolder();
       else importFiles();
       return;
     }
-    appAlert(vaultName ?? 'Carpeta', 'Editas los .md reales de esta carpeta; los cambios se guardan ahí.', [
-      { text: 'Cambiar carpeta', onPress: openFolder },
-      { text: 'Importar archivos aquí', onPress: importFiles },
-      { text: 'Cerrar carpeta', onPress: () => closeVault() },
-      { text: 'Cancelar', style: 'cancel' },
-    ], { variant: 'info', tag: 'Carpeta abierta' });
+    appAlert(
+      vaults.length === 1 ? vaults[0].name : `${vaults.length} carpetas abiertas`,
+      'Editas los .md reales de estas carpetas; los cambios se guardan ahí.',
+      [
+        { text: 'Abrir otra carpeta', onPress: openFolder },
+        { text: 'Importar archivos', onPress: importFiles },
+        { text: 'Cerrar una carpeta', onPress: askCloseVault },
+        { text: 'Cancelar', style: 'cancel' },
+      ],
+      { variant: 'info', tag: vaults.length === 1 ? 'Carpeta abierta' : 'Carpetas abiertas' }
+    );
   };
 
-  // Abre una carpeta (vault) y reporta cuántos .md trajo, o el error real.
+  // Cerrar solo saca la carpeta de la app: los archivos quedan donde están.
+  const askCloseVault = () => {
+    if (vaults.length === 1) {
+      closeVault(vaults[0].id);
+      return;
+    }
+    appAlert(
+      'Cerrar carpeta',
+      'Se quita de la app; los archivos no se tocan.',
+      [
+        ...vaults.map((v) => ({ text: v.name, onPress: () => closeVault(v.id) })),
+        { text: 'Cancelar', style: 'cancel' as const },
+      ],
+      { variant: 'warn' }
+    );
+  };
+
+  // Abre una carpeta y reporta cuántos .md trajo, o el error real.
   const openFolder = async () => {
     try {
-      const n = await openVault();
-      if (n === null) return; // cancelado
-      if (n === 0) {
+      const opened = await openVault();
+      if (opened === null) return; // cancelado
+      const { name, count, already } = opened;
+      if (already) {
+        appAlert(`"${name}" ya estaba abierta`, `Sigue ahí con sus ${count} notas.`, undefined, { variant: 'info' });
+      } else if (count === 0) {
         appAlert(
-          'Carpeta abierta, pero vacía',
+          `"${name}" está abierta, pero vacía`,
           'No encontré archivos .md ahí, ni en sus subcarpetas.',
           undefined,
           { variant: 'error' }
         );
       } else {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        appAlert('Carpeta abierta', `${n} nota${n === 1 ? '' : 's'} encontrada${n === 1 ? '' : 's'}.`, undefined, {
-          variant: 'success',
-        });
+        appAlert(
+          `Carpeta "${name}"`,
+          `${count} nota${count === 1 ? '' : 's'} encontrada${count === 1 ? '' : 's'}.`,
+          undefined,
+          { variant: 'success' }
+        );
       }
     } catch (e: any) {
       const msg = String(e?.message ?? e);
@@ -185,6 +248,8 @@ export default function LibraryScreen() {
       return;
     }
     if (res.canceled) return;
+    const target = await chooseVault('Importar aquí');
+    if (target === null) return;
     let imported = 0;
     let first: MdFile | null = null;
     const errors: string[] = [];
@@ -192,7 +257,7 @@ export default function LibraryScreen() {
       try {
         const content = await FileSystem.readAsStringAsync(asset.uri);
         const base = (asset.name ?? 'Importada').replace(MD_RE, '');
-        const file = await createWith(base, content);
+        const file = await createWith(base, content, target);
         first = first ?? file;
         imported++;
       } catch (e: any) {
@@ -229,7 +294,11 @@ export default function LibraryScreen() {
   const heroHeader = (
     <View style={[styles.hero, { borderBottomColor: theme.line }]}>
       <Text style={[styles.heroLabel, { color: theme.accent }]} numberOfLines={1}>
-        {vaultUri ? `— CARPETA · ${vaultName}` : '— NOTAS EN EL DISPOSITIVO'}
+        {vaults.length === 0
+          ? '— NOTAS EN EL DISPOSITIVO'
+          : vaults.length === 1
+            ? `— CARPETA · ${vaults[0].name}`
+            : `— ${vaults.length} CARPETAS`}
       </Text>
       <Text style={[styles.heroTitle, { color: theme.ink }]}>
         {files.length} {files.length === 1 ? 'nota' : 'notas'}
@@ -281,18 +350,19 @@ export default function LibraryScreen() {
         <Wordmark size={19} />
         <View style={styles.topRight}>
           <TouchableOpacity
-            style={[
-              styles.openBtn,
-              { borderColor: vaultUri ? theme.accent : theme.line },
-            ]}
+            style={[styles.openBtn, { borderColor: vaults.length ? theme.accent : theme.line }]}
             onPress={handleFolderPress}
           >
-            <FolderIcon color={vaultUri ? theme.accent : theme.ink} />
+            <FolderIcon color={vaults.length ? theme.accent : theme.ink} />
             <Text
-              style={[styles.openText, { color: vaultUri ? theme.accent : theme.ink }]}
+              style={[styles.openText, { color: vaults.length ? theme.accent : theme.ink }]}
               numberOfLines={1}
             >
-              {vaultUri ? vaultName : 'Abrir carpeta'}
+              {vaults.length === 0
+                ? 'Abrir carpeta'
+                : vaults.length === 1
+                  ? vaults[0].name
+                  : `${vaults.length} carpetas`}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')}>
@@ -301,10 +371,12 @@ export default function LibraryScreen() {
         </View>
       </View>
 
-      {vaultUri && filtered.length > 0 ? (
-        // Vault abierto: árbol de carpetas + notas (recursivo, colapsable).
+      {vaults.length > 0 && filtered.length > 0 ? (
+        // Con carpeta(s) abierta(s): árbol recursivo y colapsable. Con más de una,
+        // `groups` antepone una raíz por carpeta.
         <NoteTree
           notes={filtered}
+          groups={treeGroups}
           onSelect={openNote}
           onLongPressFile={confirmDelete}
           header={heroHeader}
