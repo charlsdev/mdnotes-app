@@ -316,6 +316,11 @@ Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikil
   dentro del script cortaría el bloque).
 - El escaneo NO lee su contenido (`content: ''`): se lee al abrir. Un `.sh` o un `.json`
   gigante no tiene por qué estar en memoria desde el arranque.
+- **GOTCHA del orden**: la clasificación por nombre (`classifyByName` en `lib/paths.ts`)
+  solo decide por EXTENSIÓN. Los nombres de texto sin extensión (`Dockerfile`, `LICENSE`,
+  `README`) se resuelven con `isKnownTextName` **después** de preguntar si es un
+  directorio — una carpeta llamada `README` coincide con esa lista, y clasificarla antes
+  la listaba como archivo y dejaba su contenido sin recorrer. Hay casos de prueba.
 - `.txt`/`.mdx` siguen siendo NOTAS editables (están en `MD_RE`), no texto de solo lectura.
 
 ## Visor de PDF (pdf.js) — `pdfviewer/` → `assets/pdfviewer.html`

@@ -14,6 +14,8 @@ import { computeTags, elideDataUris, utf8Length } from '@/utils/text';
 import {
   attachmentFolderFromConfig,
   inferAttachmentFolder,
+  classifyByName,
+  isKnownTextName,
   DEFAULT_ATTACHMENT_FOLDER,
 } from '@/lib/paths';
 
@@ -23,11 +25,6 @@ const LAST_VAULT_KEY = 'mdnotes:last-vault'; // dónde se creó la última nota
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 const PDF_RE = /\.pdf$/i;
-// Texto que se LEE pero no se edita: scripts, configuración, datos. Se muestran con
-// resaltado de sintaxis en su propia pantalla (ver `app/file/[id].tsx`).
-const TEXT_RE = /\.(sh|bash|zsh|ps1|bat|py|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|toml|ini|conf|cfg|env|sql|css|scss|html?|xml|csv|log|gitignore|dockerfile|makefile)$/i;
-// Archivos sin extensión que igual son texto conocido.
-const TEXT_NAMES = new Set(['dockerfile', 'makefile', 'procfile', 'license', 'readme']);
 const SAF = FileSystem.StorageAccessFramework;
 
 const MIME: Record<string, string> = {
@@ -148,6 +145,22 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
   let noteCount = 0;
   const full = () => noteCount >= MAX_NOTES || out.length >= MAX_ENTRIES;
 
+  const pushText = (uri: string, name: string, rel: string, dirUri: string) => {
+    const mtime = fileModifiedAt(uri);
+    out.push({
+      id: vaultIdForUri(uri),
+      kind: 'text',
+      uri,
+      dirUri,
+      vaultId,
+      name,
+      content: '', // se lee al abrirlo: no cargamos scripts en memoria al escanear
+      createdAt: mtime,
+      updatedAt: mtime,
+      folder: rel,
+    });
+  };
+
   async function walk(dirUri: string, rel: string, depth: number): Promise<void> {
     if (depth > MAX_DEPTH || full()) return;
     let children: string[];
@@ -161,6 +174,7 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
       if (full()) return;
       const name = fileNameFromUri(uri);
       const relPath = rel ? `${rel}/${name}` : name;
+      const kind = classifyByName(name);
       if (MD_RE.test(name)) {
         mdSeen++;
         try {
@@ -200,20 +214,8 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
           updatedAt: pdfMtime,
           folder: rel,
         });
-      } else if (TEXT_RE.test(name) || TEXT_NAMES.has(name.toLowerCase())) {
-        const txtMtime = fileModifiedAt(uri);
-        out.push({
-          id: vaultIdForUri(uri),
-          kind: 'text',
-          uri,
-          dirUri,
-          vaultId,
-          name,
-          content: '', // se lee al abrirlo: no cargamos scripts en memoria al escanear
-          createdAt: txtMtime,
-          updatedAt: txtMtime,
-          folder: rel,
-        });
+      } else if (kind === 'text') {
+        pushText(uri, name, rel, dirUri);
       } else if (IMG_RE.test(name)) {
         // Doble registro a propósito: el índice `images` resuelve las referencias de
         // las notas; la fila hace que la imagen se VEA en el árbol (si no, una
@@ -236,6 +238,11 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
         // Se anota aunque esté vacía o solo tenga imágenes: el árbol la muestra igual.
         folders.push(relPath);
         await walk(uri, relPath, depth + 1);
+      } else if (isKnownTextName(name)) {
+        // Texto sin extensión (Dockerfile, LICENSE…). VA DESPUÉS del chequeo de
+        // carpeta a propósito: una carpeta llamada `README` coincide con esta lista,
+        // y tratarla como archivo la dejaba sin recorrer.
+        pushText(uri, name, rel, dirUri);
       }
     }
   }

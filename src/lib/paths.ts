@@ -50,6 +50,35 @@ export function attachmentFolderFromConfig(configured: string | null, noteFolder
   return value.replace(/^\/+|\/+$/g, '');
 }
 
+// --- Qué es cada archivo del vault, según su nombre ---
+
+const NOTE_RE = /\.(md|markdown|txt|mdx)$/i;
+const PDF_RE = /\.pdf$/i;
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+const TEXT_RE = /\.(sh|bash|zsh|ps1|bat|py|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|toml|ini|conf|cfg|env|sql|css|scss|html?|xml|csv|log|gitignore|dockerfile|makefile)$/i;
+
+// Nombres SIN extensión que igual son texto conocido. OJO: no alcanza con que el
+// nombre esté acá para tratarlo como archivo — una carpeta llamada `README` también
+// coincide. Quien escanea DEBE preguntar antes si es un directorio (ver `listVault`).
+const TEXT_NAMES = new Set(['dockerfile', 'makefile', 'procfile', 'license', 'readme', 'changelog']);
+
+export type NameKind = 'note' | 'pdf' | 'image' | 'text' | 'unknown';
+
+// Clasifica por EXTENSIÓN. 'unknown' = no se sabe con el nombre solo: puede ser una
+// carpeta, y eso solo lo responde el sistema de archivos.
+export function classifyByName(name: string): NameKind {
+  if (NOTE_RE.test(name)) return 'note';
+  if (PDF_RE.test(name)) return 'pdf';
+  if (TEXT_RE.test(name)) return 'text';
+  if (IMAGE_RE.test(name)) return 'image';
+  return 'unknown';
+}
+
+// Para los que quedaron en 'unknown' y YA se descartó que sean carpeta.
+export function isKnownTextName(name: string): boolean {
+  return TEXT_NAMES.has(name.toLowerCase());
+}
+
 // Limpia lo que el usuario escribe como carpeta: barras invertidas, espacios
 // sobrantes, barras de más. `..` se descarta — un adjunto nunca sale del vault.
 export function sanitizeFolderPath(input: string): string {

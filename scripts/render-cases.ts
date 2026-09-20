@@ -12,6 +12,8 @@ import {
   attachmentFolderFromSetting,
   sanitizeFolderPath,
   folderSuggestions,
+  classifyByName,
+  isKnownTextName,
 } from '@/lib/paths';
 import { buildTreeRows, pathToNote } from '@/lib/tree';
 import { isNote, fileBadge, type MdFile } from '@/types';
@@ -361,6 +363,20 @@ const script: MdFile = {
   id: 's1', kind: 'text', name: 'deploy.sh', content: '', createdAt: 0, updatedAt: 0, vaultId: 'v1', uri: 'content://s',
 };
 check('un script lleva SH y no es nota', fileBadge(script) === 'SH' && !isNote(script));
+
+// 23b-bis. Clasificación por nombre. EL CASO QUE ROMPIÓ: una CARPETA llamada README
+// coincide con la lista de nombres de texto sin extensión; si se clasifica por
+// nombre antes de preguntar si es directorio, la carpeta se lista como archivo y
+// nunca se recorre.
+check('README (sin extensión) NO se clasifica por nombre', classifyByName('README') === 'unknown');
+check('…pero sí es un nombre de texto conocido', isKnownTextName('README'));
+check('README.md es una nota', classifyByName('README.md') === 'note');
+check('deploy.sh es texto', classifyByName('deploy.sh') === 'text');
+check('manual.pdf es PDF', classifyByName('manual.pdf') === 'pdf');
+check('foto.PNG es imagen', classifyByName('foto.PNG') === 'image');
+check('una carpeta con punto queda sin clasificar', classifyByName('notas.v2') === 'unknown');
+check('Dockerfile es nombre de texto conocido', isKnownTextName('Dockerfile'));
+check('una carpeta cualquiera no lo es', isKnownTextName('Proyectos') === false);
 check('las imágenes también se listan en el árbol',
   buildTreeRows([vNote('n1', 'Nota', 'v1'), img('foto.png')], 'all').filter((r) => r.kind === 'file').length === 2);
 check('una nota vieja sin `kind` sigue siendo nota',
