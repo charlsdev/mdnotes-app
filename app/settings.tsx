@@ -1,10 +1,34 @@
-import { View, Text, StyleSheet, TouchableOpacity, Pressable, Switch, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Pressable, Switch, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTheme, fonts, spacing, radius } from '@/theme';
-import { useSettings, PDF_MARGINS, THEME_OPTIONS, READING_SIZES, READING_FONTS } from '@/storage/settings';
+import {
+  useSettings,
+  PDF_MARGINS,
+  THEME_OPTIONS,
+  READING_SIZES,
+  READING_FONTS,
+  ATTACHMENT_MODES,
+} from '@/storage/settings';
+import { sanitizeFolderPath, type AttachmentMode } from '@/lib/paths';
 import { Footer } from '@/components/Footer';
+
+// Qué va a pasar, en concreto: el modo por sí solo no dice dónde termina la foto.
+function attachmentHint(mode: AttachmentMode, folder: string): string {
+  const clean = sanitizeFolderPath(folder);
+  if (mode === 'auto') {
+    return 'Sigo lo que ya usa tu carpeta: la config de Obsidian si la tiene, o la carpeta donde están las imágenes de tus notas.';
+  }
+  if (mode === 'note') {
+    return clean
+      ? `Cada foto va a una carpeta "${clean}" dentro de la carpeta de la nota. Una nota en Proyectos/ guarda en Proyectos/${clean}/.`
+      : 'Cada foto va junto a la nota, en su misma carpeta.';
+  }
+  return clean
+    ? `Todas las fotos van a "${clean}/", desde la raíz de la carpeta abierta.`
+    : 'Todas las fotos van a la raíz de la carpeta abierta.';
+}
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -15,11 +39,15 @@ export default function SettingsScreen() {
     theme: themePref,
     readingScale,
     readingFont,
+    attachmentMode,
+    attachmentFolder,
     setPdfMargin,
     setAutosave,
     setTheme,
     setReadingScale,
     setReadingFont,
+    setAttachmentMode,
+    setAttachmentFolder,
   } = useSettings();
 
   return (
@@ -32,7 +60,9 @@ export default function SettingsScreen() {
         <View style={styles.back} />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      {/* `handled`: con el teclado abierto (campo de la carpeta), el primer toque
+          en otra opción la activa en vez de perderse cerrando el teclado. */}
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         {/* Apariencia */}
         <Text style={[styles.section, { color: theme.accent }]}>— TEMA</Text>
         <View style={styles.options}>
@@ -127,6 +157,43 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* Imágenes */}
+        <Text style={[styles.section, { color: theme.accent }]}>— CARPETA DE IMÁGENES</Text>
+        <View style={styles.options}>
+          {ATTACHMENT_MODES.map((opt) => {
+            const active = opt.value === attachmentMode;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setAttachmentMode(opt.value);
+                }}
+                style={[
+                  styles.opt,
+                  { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent + '14' : 'transparent' },
+                ]}
+              >
+                <Text style={[styles.optLabel, { color: active ? theme.accent : theme.ink }]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {attachmentMode !== 'auto' && (
+          <View style={[styles.input, { borderColor: theme.line }]}>
+            <TextInput
+              style={[styles.inputText, { color: theme.ink }]}
+              value={attachmentFolder}
+              onChangeText={setAttachmentFolder}
+              placeholder="img"
+              placeholderTextColor={theme.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        )}
+        <Text style={[styles.note, { color: theme.muted }]}>{attachmentHint(attachmentMode, attachmentFolder)}</Text>
+
         {/* PDF */}
         <Text style={[styles.section, { color: theme.accent }]}>— MÁRGENES DEL PDF</Text>
         <View style={styles.options}>
@@ -202,5 +269,13 @@ const styles = StyleSheet.create({
   },
   optLabel: { fontFamily: fonts.sansMedium, fontSize: 14 },
   optMm: { fontFamily: fonts.mono, fontSize: 11 },
+  input: {
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+  },
+  inputText: { fontFamily: fonts.mono, fontSize: 14, paddingVertical: spacing.md },
   note: { fontFamily: fonts.sans, fontSize: 12, paddingHorizontal: spacing.xl, paddingTop: spacing.md, lineHeight: 17 },
 });

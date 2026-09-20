@@ -24,7 +24,7 @@ mdnotes-app/
 │   ├── _layout.tsx        Fuentes + splash + KeyboardProvider + AlertProvider + Stack
 │   ├── index.tsx          Biblioteca: lista/árbol, abrir carpeta, importar, crear, buscar, ⚙
 │   ├── editor/[id].tsx    Editor 3 modos (VIVO/MD/VER) + toolbar + cajón (☰) + guardado
-│   └── settings.tsx       Ajustes: autoguardado + margen del PDF
+│   └── settings.tsx       Ajustes: tema, lectura, autoguardado, imágenes, margen del PDF
 ├── src/
 │   ├── components/        EditorToolbar, ModeToggle, MarkdownPreview (VER), MarkdownWysiwyg (VIVO),
 │   │                      NoteTree, NoteTreeDrawer, AppAlert, Footer, CharlsdevMark, Wordmark
@@ -71,7 +71,8 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Imágenes** de galería redimensionadas y comprimidas. Con carpeta abierta se guardan como
   **archivo de la carpeta** (`adjuntos/`, o donde diga la config de Obsidian) y la nota solo
   lleva la ruta: el `.md` queda legible y portable. Sin carpeta, se incrustan en la nota.
-- **Ajustes** (⚙): **tema** (sistema/claro/oscuro), **tamaño** y **fuente** de lectura, autoguardado,
+- **Ajustes** (⚙): **carpeta de imágenes** (automática / junto a la nota / carpeta fija),
+  **tema** (sistema/claro/oscuro), **tamaño** y **fuente** de lectura, autoguardado,
   margen del PDF. Búsqueda en contenido.
 
 ## Correr / probar

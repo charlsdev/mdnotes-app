@@ -10,7 +10,11 @@ import { File } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MdFile } from '@/types';
 import { computeTags, elideDataUris, utf8Length } from '@/utils/text';
-import { attachmentFolderFromConfig } from '@/lib/paths';
+import {
+  attachmentFolderFromConfig,
+  inferAttachmentFolder,
+  DEFAULT_ATTACHMENT_FOLDER,
+} from '@/lib/paths';
 
 const VAULT_KEY = 'mdnotes:vault-uri';
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
@@ -306,11 +310,20 @@ async function ensureFolder(rootUri: string, relPath: string): Promise<string> {
   return dir;
 }
 
-// Carpeta de adjuntos configurada en Obsidian (`.obsidian/app.json` →
-// `attachmentFolderPath`), traducida a una ruta relativa a la RAÍZ del vault.
-// Si no hay config (o no se puede leer), usa `adjuntos`. Semántica de Obsidian:
-//   '/' → raíz · 'x' → x desde la raíz · './' → junto a la nota · './x' → x junto a la nota
-export async function attachmentFolderFor(rootUri: string, noteFolder: string): Promise<string> {
+// Dónde guardar un adjunto nuevo, en orden de prioridad:
+//   1. el ajuste de la app, si el usuario lo fijó (`override`) — es lo más explícito
+//   2. lo que diga Obsidian en `.obsidian/app.json`
+//   3. la convención que ya usa el vault, deducida de las imágenes existentes
+//   4. `adjuntos/`
+// `knownImages` son las rutas del índice del escaneo (`vaultImages`).
+export async function attachmentFolderFor(
+  rootUri: string,
+  noteFolder: string,
+  knownImages: string[] = [],
+  override?: string | null
+): Promise<string> {
+  // Ojo: '' es un valor válido (la raíz del vault), así que se compara contra null.
+  if (override !== null && override !== undefined) return override;
   let configured: string | null = null;
   // (La traducción de la config a ruta vive en `paths.ts`, que es puro y testeable.)
   try {
@@ -329,7 +342,11 @@ export async function attachmentFolderFor(rootUri: string, noteFolder: string): 
     // Sin config legible: seguimos con el default.
   }
 
-  return attachmentFolderFromConfig(configured, noteFolder);
+  return (
+    attachmentFolderFromConfig(configured, noteFolder) ??
+    inferAttachmentFolder(knownImages, noteFolder) ??
+    DEFAULT_ATTACHMENT_FOLDER
+  );
 }
 
 // Guarda una imagen (base64) como archivo real del vault. Devuelve su ruta

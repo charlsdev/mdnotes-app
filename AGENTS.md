@@ -24,7 +24,7 @@ app/
   _layout.tsx        Fuentes + splash + KeyboardProvider + AlertProvider + Stack + carga de ajustes
   index.tsx          Biblioteca: lista/árbol, abrir carpeta (vault), importar, crear, buscar, ⚙ ajustes
   editor/[id].tsx    Editor de 3 modos (VIVO/MD/VER) + toolbar + cajón (☰) + indicador de guardado
-  settings.tsx       Ajustes: autoguardado (on/off) + margen del PDF
+  settings.tsx       Ajustes: tema, lectura, autoguardado, carpeta de imágenes, margen del PDF
 src/
   components/         EditorToolbar, ModeToggle, MarkdownPreview (VER), MarkdownWysiwyg (VIVO),
                      NoteTree, NoteTreeDrawer, TagsBar, AppAlert, Footer, CharlsdevMark, Wordmark
@@ -180,16 +180,29 @@ es un muro de base64) y engorda cada escaneo. Por eso, con vault abierto:
 - `saveVaultImage()` (`vault.ts`) escribe el JPEG en la carpeta de adjuntos y **devuelve la
   ruta derivada de la URI que dio el proveedor**, no del nombre que pedimos: Android puede
   cambiarlo (`foto (1).jpg`) y la nota tiene que enlazar el nombre REAL.
-- La carpeta sale de `.obsidian/app.json` → `attachmentFolderPath` si el vault es de Obsidian
-  (`/`, `x`, `./`, `./x` — ver `attachmentFolderFromConfig` en `lib/paths.ts`); si no,
-  `adjuntos/`. Los segmentos que falten se crean, reusando la carpeta si ya existe (crear a
-  ciegas daría `adjuntos (1)`).
+- **Dónde va el adjunto**, en orden: (1) el **ajuste de la app** si no está en automático
+  (`attachmentFolderFromSetting`: `auto` | `note` = junto a la nota | `vault` = carpeta fija;
+  ver `— CARPETA DE IMÁGENES` en Ajustes); (2) `.obsidian/app.json` → `attachmentFolderPath`
+  si el vault es de Obsidian (`/`, `x`, `./`, `./x` — `attachmentFolderFromConfig`); (3) la
+  convención que YA usa el vault, deducida de las imágenes indexadas
+  (`inferAttachmentFolder`: si las notas guardan en `img/` junto a la nota, la foto nueva
+  cae ahí); (4) `adjuntos/`. Los pasos 2-3 existen para no plantar una segunda carpeta de
+  adjuntos al lado de la que el usuario ya usaba; el 1, porque deducir es adivinar y el
+  usuario tiene que poder decirlo. Los segmentos que falten se crean, reusando la carpeta
+  si ya existe (crear a ciegas daría `adjuntos (1)`).
+- **`''` es un valor válido** (la raíz del vault) en toda esta cadena: compara contra `null`,
+  nunca por falsy, o "carpeta fija vacía" terminaría cayendo al default.
 - Se enlaza con **Markdown estándar y ruta relativa a la nota** (`![imagen](../adjuntos/x.jpg)`),
   no con `![[x.jpg]]`: funciona igual en Obsidian y además fuera de él. `relativeTo()` calcula
   la ruta y `resolveRel()` la deshace — son inversas, y hay round-trips que lo prueban.
 - El adjunto nuevo se registra en `vaultImages` (`addVaultImage`) para que el preview lo
   resuelva sin re-escanear la carpeta.
 - Las notas viejas con base64 siguen funcionando (nada las migra automáticamente).
+- **Las referencias que ya existen NO se tocan.** `createImageResolver` (`lib/paths.ts`)
+  resuelve lo que haya escrito en la nota: `./img/x.png`, `img/x.png`, `../x.png`, el
+  `%20` de los espacios, las **barras invertidas de Windows** (`.\img\x.png`) y, como
+  último recurso, por nombre de archivo (que es como Obsidian resuelve `![[x.png]]`).
+  Hay casos de prueba para cada forma en `scripts/render-cases.ts`.
 - **Imágenes locales del vault** (`![](./img/x.png)` o `<img src>`): el escaneo indexa las
   imágenes (`VaultScan.images`: relPath→uri) y el editor las resuelve a data URI antes del
   preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
@@ -292,7 +305,9 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   autoguardado, **tema** (`system|light|dark` → `useEffectiveScheme()` en `src/theme`, respetado
   por `useTheme`/`_layout`/`MarkdownPreview`), **tamaño de lectura** (`readingScale` → font-size
   en VER `mdToHtml(..,{scale})`, editor MD, y VIVO via bridge `setScale`), **fuente de lectura**
-  (`readingFont` sans/serif/mono → solo VER, `mdToHtml(..,{fontStack})`).
+  (`readingFont` sans/serif/mono → solo VER, `mdToHtml(..,{fontStack})`), **carpeta de
+  imágenes** (`attachmentMode` + `attachmentFolder` → ver "Adjuntos"; el campo de texto solo
+  aparece fuera del modo automático, y el pie explica en concreto dónde terminará la foto).
 - **Tags** (`src/lib/frontmatter.ts`): editables desde `TagsBar.tsx` (chips), guardados en
   **frontmatter YAML** (`---\ntags: [a,b]\n---`). `computeTags(content)` = frontmatter ∪ `#hashtags`
   del cuerpo. Filtro por tag en la biblioteca (`tagFilter`, barra en el hero). **GOTCHAS**:

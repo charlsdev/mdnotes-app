@@ -2,7 +2,16 @@
 // internos y rutas de adjuntos.
 import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
-import { relativeTo, resolveRel, encodeRef, attachmentFolderFromConfig } from '@/lib/paths';
+import {
+  relativeTo,
+  resolveRel,
+  encodeRef,
+  attachmentFolderFromConfig,
+  inferAttachmentFolder,
+  createImageResolver,
+  attachmentFolderFromSetting,
+  sanitizeFolderPath,
+} from '@/lib/paths';
 import type { MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
@@ -127,16 +136,83 @@ check('los espacios se escapan', encodeRef('mis adjuntos/foto (1).jpg') === 'mis
 check('los acentos se dejan legibles', encodeRef('imágenes/ñandú.jpg') === 'imágenes/ñandú.jpg');
 
 // 15. attachmentFolderPath de Obsidian
-check("sin config → carpeta propia", attachmentFolderFromConfig(null, 'README') === 'adjuntos');
+check('sin config → null (decide quien llama)', attachmentFolderFromConfig(null, 'README') === null);
 check("'/' → raíz del vault", attachmentFolderFromConfig('/', 'README') === '');
 check("'assets' → desde la raíz", attachmentFolderFromConfig('assets', 'README') === 'assets');
 check("'/assets' → desde la raíz", attachmentFolderFromConfig('/assets', 'README') === 'assets');
 check("'./' → junto a la nota", attachmentFolderFromConfig('./', 'README') === 'README');
 check("'./img' → subcarpeta de la nota", attachmentFolderFromConfig('./img', 'README') === 'README/img',
-  attachmentFolderFromConfig('./img', 'README'));
+  String(attachmentFolderFromConfig('./img', 'README')));
 check("'./img' con nota en la raíz", attachmentFolderFromConfig('./img', '') === 'img');
 
-// 16. El enlace generado tiene que renderizar como imagen (no como enlace roto)
+// --- Notas que YA existen: sus referencias no se pueden romper ---
+
+// 16. Un vault real: nota en README/ que apunta a .\img\imagen.png (barras de Windows)
+const vaultImages = {
+  'README/img/imagen.png': 'content://saf/README%2Fimg%2Fimagen.png',
+  'README/img/otra foto.png': 'content://saf/README%2Fimg%2Fotra%20foto.png',
+  'adjuntos/nueva.jpg': 'content://saf/adjuntos%2Fnueva.jpg',
+};
+const find = createImageResolver(vaultImages);
+const IMG = vaultImages['README/img/imagen.png'];
+
+check('.\\img\\imagen.png (barras de Windows)', find('.\\img\\imagen.png', 'README') === IMG, String(find('.\\img\\imagen.png', 'README')));
+check('./img/imagen.png', find('./img/imagen.png', 'README') === IMG);
+check('img/imagen.png (sin ./)', find('img/imagen.png', 'README') === IMG);
+check('README/img/imagen.png (desde la raíz)', find('README/img/imagen.png', '') === IMG);
+check('../README/img/imagen.png (subiendo)', find('../README/img/imagen.png', 'Otra') === IMG);
+check('imagen.png suelta → por nombre de archivo', find('imagen.png', 'Otra') === IMG);
+check('espacios escapados con %20', find('./img/otra%20foto.png', 'README') === vaultImages['README/img/otra foto.png']);
+check('ruta nueva estilo adjuntos', find('../adjuntos/nueva.jpg', 'README') === vaultImages['adjuntos/nueva.jpg']);
+check('las URLs remotas se dejan quietas', find('https://ejemplo.com/x.png', 'README') === null);
+check('los data URI se dejan quietos', find('data:image/png;base64,AAA', 'README') === null);
+check('una imagen que no existe → null', find('./img/no-existe.png', 'README') === null);
+
+// 17. La convención del vault manda: con notas que usan img/, la foto nueva va ahí
+const existing = Object.keys(vaultImages).filter((p) => p.startsWith('README/img/'));
+check('vault con img/ junto a la nota → la foto nueva cae en README/img',
+  inferAttachmentFolder(existing, 'README') === 'README/img', String(inferAttachmentFolder(existing, 'README')));
+check('misma convención para una nota de otra carpeta → Otra/img',
+  inferAttachmentFolder(existing, 'Otra') === 'Otra/img', String(inferAttachmentFolder(existing, 'Otra')));
+check('vault con img/ en la RAÍZ → carpeta central',
+  inferAttachmentFolder(['img/a.png', 'img/b.png'], 'README') === 'img',
+  String(inferAttachmentFolder(['img/a.png', 'img/b.png'], 'README')));
+check('gana la carpeta más usada',
+  inferAttachmentFolder(['img/a.png', 'img/b.png', 'img/c.png', 'assets/x.png'], '') === 'img');
+check('vault sin imágenes → null (se usa el default)', inferAttachmentFolder([], 'README') === null);
+check('imágenes sueltas en la raíz no son una convención', inferAttachmentFolder(['a.png', 'b.png'], 'README') === null);
+
+// 18. El ajuste de la app (gana sobre Obsidian y sobre la deducción)
+check('modo automático → null (deciden config/deducción)',
+  attachmentFolderFromSetting('auto', 'img', 'README') === null);
+check("'junto a la nota' con nombre → README/fotos",
+  attachmentFolderFromSetting('note', 'fotos', 'README') === 'README/fotos',
+  String(attachmentFolderFromSetting('note', 'fotos', 'README')));
+check("'junto a la nota' sin nombre → la carpeta de la nota",
+  attachmentFolderFromSetting('note', '', 'README') === 'README');
+check("'junto a la nota' con nota en la raíz", attachmentFolderFromSetting('note', 'img', '') === 'img');
+check("'carpeta fija' → ruta desde la raíz",
+  attachmentFolderFromSetting('vault', 'assets/img', 'README') === 'assets/img');
+check("'carpeta fija' vacía → raíz del vault",
+  attachmentFolderFromSetting('vault', '', 'README') === '');
+check('se limpia lo que escribe el usuario (barras y espacios)',
+  attachmentFolderFromSetting('vault', ' \\mis fotos\\ ', '') === 'mis fotos',
+  String(attachmentFolderFromSetting('vault', ' \\mis fotos\\ ', '')));
+check('`..` no puede sacar el adjunto del vault',
+  attachmentFolderFromSetting('vault', '../../etc', '') === 'etc',
+  String(attachmentFolderFromSetting('vault', '../../etc', '')));
+check('sanitizeFolderPath deja una ruta normal intacta', sanitizeFolderPath('assets/img') === 'assets/img');
+
+// 19. Lo que escribimos para la foto nueva resuelve a donde la guardamos
+const newFolder = inferAttachmentFolder(existing, 'README')!; // 'README/img'
+const newPath = `${newFolder}/imagen-20260919-214300.jpg`;
+const link = encodeRef(relativeTo('README', newPath));
+// Misma forma que ya usan las notas del usuario: `img/…` desde la carpeta de la nota.
+check('la foto nueva se enlaza con la convención del vault', link === 'img/imagen-20260919-214300.jpg', link);
+check('y ese enlace resuelve al archivo guardado',
+  createImageResolver({ [newPath]: 'uri-nueva' })(link, 'README') === 'uri-nueva');
+
+// 19. El enlace generado tiene que renderizar como imagen (no como enlace roto)
 const written = encodeRef(relativeTo('README', 'adjuntos/imagen-20260919-214300.jpg'));
 const h16 = render(`![imagen](${written})`);
 check('el markdown generado produce un <img>', h16.includes('<img') && h16.includes(written), h16);

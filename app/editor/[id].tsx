@@ -27,7 +27,7 @@ import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
 import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
-import { resolveRel, relativeTo, encodeRef } from '@/lib/paths';
+import { relativeTo, encodeRef, createImageResolver, attachmentFolderFromSetting } from '@/lib/paths';
 import { WikilinkSuggestions } from '@/components/WikilinkSuggestions';
 import { readImageDataUri, saveVaultImage, attachmentFolderFor } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
@@ -50,6 +50,8 @@ export default function EditorScreen() {
   const autosave = useSettings((s) => s.autosave);
   const pdfMarginMm = useSettings((s) => s.pdfMarginMm);
   const readingScale = useSettings((s) => s.readingScale);
+  const attachmentMode = useSettings((s) => s.attachmentMode);
+  const attachmentFolderPref = useSettings((s) => s.attachmentFolder);
   const { files, upsert, remove, vaultImages, vaultUri, addVaultImage, readContent, loaded, load } =
     useFilesStore();
 
@@ -385,7 +387,14 @@ export default function EditorScreen() {
     if (vaultUri && file?.uri) {
       try {
         const noteFolder = file.folder ?? '';
-        const folder = await attachmentFolderFor(vaultUri, noteFolder);
+        // El ajuste manda; si está en automático, se deduce de la config de Obsidian
+        // o de la convención que ya usan las notas (índice de imágenes del escaneo).
+        const folder = await attachmentFolderFor(
+          vaultUri,
+          noteFolder,
+          Object.keys(vaultImages),
+          attachmentFolderFromSetting(attachmentMode, attachmentFolderPref, noteFolder)
+        );
         const saved = await saveVaultImage(vaultUri, folder, imageBaseName(), out.base64);
         addVaultImage(saved.relPath, saved.uri);
         onInsert(`\n![imagen](${encodeRef(relativeTo(noteFolder, saved.relPath))})\n`);
@@ -639,25 +648,10 @@ async function inlineLocalImages(
     if (/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(m[1])) refs.add(m[1]);
   }
 
-  // Índice por nombre de archivo: Obsidian referencia los adjuntos por nombre
-  // (`![[foto.png]]`) sin importar en qué carpeta del vault estén.
-  const byBasename: Record<string, string> = {};
-  for (const [rel, uri] of Object.entries(images)) {
-    const base = (rel.split('/').pop() ?? rel).toLowerCase();
-    if (!(base in byBasename)) byBasename[base] = uri;
-  }
-
+  const findImage = createImageResolver(images);
   const replacements: Record<string, string> = {};
   for (const ref of refs) {
-    if (/^(https?:|data:|file:|content:)/i.test(ref)) continue;
-    const norm = ref.replace(/\\/g, '/').replace(/^\.\//, '');
-    const base = (norm.split('/').pop() ?? norm).toLowerCase();
-    const uri =
-      images[resolveRel(folder, ref)] ??
-      images[norm] ??
-      images[decodeURIComponent(norm)] ??
-      byBasename[base] ??
-      byBasename[decodeURIComponent(base)];
+    const uri = findImage(ref, folder);
     if (!uri) continue;
     try {
       replacements[ref] = await readImageDataUri(uri);

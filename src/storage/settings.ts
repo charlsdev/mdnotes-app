@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { AttachmentMode } from '@/lib/paths';
+
+export type { AttachmentMode };
 
 const KEY = 'mdnotes:settings';
 
@@ -13,6 +16,14 @@ export const PDF_MARGINS = [
 
 export type ThemePref = 'system' | 'light' | 'dark';
 export type ReadingFont = 'sans' | 'serif' | 'mono';
+
+// Dónde guardar las imágenes que se insertan en una nota de la carpeta abierta.
+// 'auto' = la config de Obsidian o la convención que ya usan las notas.
+export const ATTACHMENT_MODES: { value: AttachmentMode; label: string }[] = [
+  { value: 'auto', label: 'Automática' },
+  { value: 'note', label: 'Junto a la nota' },
+  { value: 'vault', label: 'Carpeta fija' },
+];
 
 export const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'system', label: 'Sistema' },
@@ -40,6 +51,8 @@ interface Settings {
   theme: ThemePref;
   readingScale: number;
   readingFont: ReadingFont;
+  attachmentMode: AttachmentMode;
+  attachmentFolder: string;
 }
 const DEFAULTS: Settings = {
   pdfMarginMm: 12,
@@ -47,6 +60,10 @@ const DEFAULTS: Settings = {
   theme: 'system',
   readingScale: 1.0,
   readingFont: 'sans',
+  // 'auto' de fábrica: un vault de Obsidian ya trae esta respuesta en su config,
+  // no tiene sentido obligar a repetirla.
+  attachmentMode: 'auto',
+  attachmentFolder: 'img',
 };
 
 interface SettingsState extends Settings {
@@ -57,6 +74,8 @@ interface SettingsState extends Settings {
   setTheme: (t: ThemePref) => Promise<void>;
   setReadingScale: (s: number) => Promise<void>;
   setReadingFont: (f: ReadingFont) => Promise<void>;
+  setAttachmentMode: (m: AttachmentMode) => Promise<void>;
+  setAttachmentFolder: (f: string) => Promise<void>;
 }
 
 export const useSettings = create<SettingsState>((set, get) => ({
@@ -93,9 +112,20 @@ export const useSettings = create<SettingsState>((set, get) => ({
     set({ readingFont: f });
     await persist(get);
   },
+  setAttachmentMode: async (m) => {
+    set({ attachmentMode: m });
+    await persist(get);
+  },
+  setAttachmentFolder: async (f) => {
+    set({ attachmentFolder: f });
+    await persist(get);
+  },
 }));
 
 async function persist(get: () => SettingsState) {
-  const { pdfMarginMm, autosave, theme, readingScale, readingFont } = get();
-  await AsyncStorage.setItem(KEY, JSON.stringify({ pdfMarginMm, autosave, theme, readingScale, readingFont }));
+  const { pdfMarginMm, autosave, theme, readingScale, readingFont, attachmentMode, attachmentFolder } = get();
+  await AsyncStorage.setItem(
+    KEY,
+    JSON.stringify({ pdfMarginMm, autosave, theme, readingScale, readingFont, attachmentMode, attachmentFolder })
+  );
 }
