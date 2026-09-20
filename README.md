@@ -45,6 +45,8 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 
 - **Vault**: abrir carpetas del teléfono (recursivo, subcarpetas) y editar los `.md`
   reales en sitio; **árbol** colapsable. (Solo almacenamiento local, no Drive.)
+- **Refrescar** con el botón ↻ o deslizando la lista: re-escanea las carpetas para ver
+  lo que creaste desde otra app o desde la PC.
 - **Todo el directorio en el árbol**, no solo los `.md`: PDF, imágenes y scripts se
   listan junto a las notas con su extensión como etiqueta (`PDF`, `PNG`, `SH`), y
   también aparecen las carpetas vacías. El árbol arranca **recogido**, abierto solo en

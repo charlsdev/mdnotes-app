@@ -107,6 +107,17 @@ export default function EditorScreen() {
 
   const drawerFolders = vaults.length === 1 ? vaultFolders[vaults[0].id] : undefined;
 
+  // Re-escanear desde el cajón: lo creado desde otra app no aparece solo.
+  const [rescanning, setRescanning] = useState(false);
+  const rescan = async () => {
+    setRescanning(true);
+    try {
+      await load();
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
   // antes de pasar el contenido al preview (el WebView no lee content:// sueltos).
   useEffect(() => {
@@ -552,6 +563,8 @@ export default function EditorScreen() {
         notes={files}
         groups={treeGroups}
         folders={drawerFolders}
+        refreshing={rescanning}
+        onRefresh={rescan}
         currentId={id}
         onSelect={openFile}
         onClose={() => setDrawerOpen(false)}

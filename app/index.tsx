@@ -47,6 +47,15 @@ function FolderIcon({ color }: { color: string }) {
   );
 }
 
+function RefreshIcon({ color }: { color: string }) {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <Path d="M21 3v6h-6" />
+    </Svg>
+  );
+}
+
 function GearIcon({ color }: { color: string }) {
   return (
     <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -75,6 +84,19 @@ export default function LibraryScreen() {
   } = useFilesStore();
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Re-escanea las carpetas abiertas. Hace falta porque el escaneo ocurre al
+  // arrancar: lo que crees desde otra app (o desde la PC) no aparece hasta pedirlo.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    Haptics.selectionAsync();
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!loaded) load();
@@ -430,6 +452,9 @@ export default function LibraryScreen() {
                   : `${vaults.length} carpetas`}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleRefresh} disabled={refreshing}>
+            <RefreshIcon color={refreshing ? theme.accent : theme.muted} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')}>
             <GearIcon color={theme.muted} />
           </TouchableOpacity>
@@ -444,6 +469,8 @@ export default function LibraryScreen() {
           groups={treeGroups}
           folders={treeFolders}
           expandAll={isFiltering}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           onSelect={openNote}
           onLongPressFile={confirmDelete}
           header={heroHeader}
@@ -455,6 +482,8 @@ export default function LibraryScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingBottom: 120 }}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={heroHeader}
           ListEmptyComponent={
@@ -515,7 +544,9 @@ export default function LibraryScreen() {
         <Text style={{ color: '#f5f1ea', fontSize: 28, fontWeight: '300', marginTop: -2 }}>+</Text>
       </TouchableOpacity>
 
-      {loading && (
+      {/* Al refrescar ya hay un indicador en la lista: el overlay taparía todo y
+          además diría "Abriendo carpeta", que no es lo que está pasando. */}
+      {loading && !refreshing && (
         <View style={[styles.loadingOverlay, { backgroundColor: theme.bg + 'e6' }]}>
           <ActivityIndicator color={theme.accent} size="large" />
           <Text style={[styles.loadingText, { color: theme.muted }]}>Abriendo carpeta…</Text>

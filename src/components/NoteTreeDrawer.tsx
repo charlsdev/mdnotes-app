@@ -19,6 +19,8 @@ export function NoteTreeDrawer({
   bottomInset = 0,
   groups,
   folders,
+  refreshing,
+  onRefresh,
 }: {
   visible: boolean;
   notes: MdFile[];
@@ -31,6 +33,9 @@ export function NoteTreeDrawer({
   groups?: TreeGroup[];
   // Todas las carpetas (las vacías también), igual que el árbol de la biblioteca.
   folders?: string[];
+  // Deslizar para re-escanear, sin salir del editor.
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -75,6 +80,8 @@ export function NoteTreeDrawer({
             folders={query.trim() ? undefined : folders}
             currentId={currentId}
             expandAll={query.trim().length > 0}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
             onSelect={(n) => {
               onSelect(n);
               onClose();

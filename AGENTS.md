@@ -136,6 +136,12 @@ sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
   `VaultScan.folders` las junta durante el escaneo (que ya las recorría) y el árbol las
   muestra aunque estén vacías — como hace Obsidian. Con un filtro activo NO se pasan:
   filtrando, el árbol debe mostrar lo que coincide, no la estructura entera.
+- **Refrescar** (botón ↻ en la biblioteca y deslizar en el árbol, también desde el
+  cajón del editor) = `load()`, que re-escanea TODAS las carpetas abiertas. Hace falta
+  porque el escaneo solo corre al arrancar: lo que el usuario cree desde otra app o
+  desde la PC no aparece solo. El estado de apertura del árbol NO se pierde al
+  refrescar (vive en `NoteTree`, que no se remonta), y mientras se refresca se oculta
+  el overlay de "Abriendo carpeta…" — hay indicador en la lista y ese texto mentiría.
 - **El árbol arranca RECOGIDO**, con abierto solo el camino de la nota activa
   (`pathToNote`). Con vaults de cien archivos, abrirlo todo era un muro. El estado es
   de APERTURA (`Expanded = Set | 'all'`), no de colapso: `new Set()` = todo cerrado.

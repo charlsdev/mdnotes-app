@@ -25,6 +25,8 @@ export function NoteTree({
   groups,
   folders,
   expandAll,
+  refreshing,
+  onRefresh,
 }: {
   notes: MdFile[];
   onSelect: (note: MdFile) => void;
@@ -38,6 +40,9 @@ export function NoteTree({
   folders?: string[];
   // Al filtrar hay que abrir todo: si no, los resultados quedan escondidos.
   expandAll?: boolean;
+  // Deslizar para re-escanear la carpeta (archivos creados desde otra app).
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }) {
   const theme = useTheme();
   const grouped = (groups?.length ?? 0) > 1;
@@ -75,6 +80,8 @@ export function NoteTree({
       keyExtractor={(r) => r.key}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
+      refreshing={onRefresh ? !!refreshing : undefined}
+      onRefresh={onRefresh}
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 100 }}
       renderItem={({ item }) => {
