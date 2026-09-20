@@ -109,6 +109,41 @@ export function inferAttachmentFolder(imagePaths: string[], noteFolder: string):
   return noteFolder ? `${noteFolder}/${name}` : name;
 }
 
+// Carpetas para ofrecer en Ajustes, sacadas de lo que el vault YA tiene: primero
+// las que contienen imágenes (son las carpetas de adjuntos de verdad), después las
+// que contienen notas. Tocar una evita el riesgo real de tipear a mano: un typo no
+// falla, CREA una carpeta nueva y te deja dos carpetas de imágenes sin darte cuenta.
+// En modo 'note' se ofrecen nombres sueltos ('img'); en 'vault', rutas completas.
+export function folderSuggestions(
+  mode: AttachmentMode,
+  imagePaths: string[],
+  noteFolders: string[],
+  limit = 8
+): string[] {
+  const score = new Map<string, number>();
+  const add = (value: string, weight: number) => {
+    if (!value) return;
+    score.set(value, (score.get(value) ?? 0) + weight);
+  };
+
+  for (const p of imagePaths) {
+    const parts = p.split('/').filter(Boolean);
+    if (parts.length < 2) continue;
+    const folder = parts.slice(0, -1).join('/');
+    add(mode === 'note' ? parts[parts.length - 2] : folder, 10);
+  }
+  for (const folder of noteFolders) {
+    const parts = folder.split('/').filter(Boolean);
+    if (!parts.length) continue;
+    add(mode === 'note' ? parts[parts.length - 1] : parts.join('/'), 1);
+  }
+
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([value]) => value);
+}
+
 // Busca una imagen del vault a partir de la referencia escrita en la nota.
 // Tolera `./`, `../`, las barras invertidas de Windows (`.\img\x.png`) y el
 // %20 de los espacios; y como último recurso busca por nombre de archivo, que es

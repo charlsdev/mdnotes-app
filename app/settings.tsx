@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Pressable, Switch, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,7 +12,8 @@ import {
   READING_FONTS,
   ATTACHMENT_MODES,
 } from '@/storage/settings';
-import { sanitizeFolderPath, type AttachmentMode } from '@/lib/paths';
+import { sanitizeFolderPath, folderSuggestions, type AttachmentMode } from '@/lib/paths';
+import { useFilesStore } from '@/storage/store';
 import { Footer } from '@/components/Footer';
 
 // Qué va a pasar, en concreto: el modo por sí solo no dice dónde termina la foto.
@@ -33,6 +35,7 @@ function attachmentHint(mode: AttachmentMode, folder: string): string {
 export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { files, vaultImages } = useFilesStore();
   const {
     pdfMarginMm,
     autosave,
@@ -49,6 +52,24 @@ export default function SettingsScreen() {
     setAttachmentMode,
     setAttachmentFolder,
   } = useSettings();
+
+  // Carpetas que ya existen en las carpetas abiertas: tocar una es lo que evita
+  // el typo. Se recalculan según el modo (nombre suelto vs ruta completa).
+  const suggestions = useMemo(() => {
+    if (attachmentMode === 'auto') return [];
+    const imagePaths = Object.values(vaultImages).flatMap((m) => Object.keys(m));
+    const noteFolders = files.map((f) => f.folder ?? '').filter(Boolean);
+    return folderSuggestions(attachmentMode, imagePaths, noteFolders);
+  }, [attachmentMode, vaultImages, files]);
+
+  // ¿Lo tipeado no coincide con ninguna carpeta conocida? Puede ser a propósito
+  // (carpeta nueva) o un error de tipeo; lo avisamos sin bloquear.
+  const isNewFolder = useMemo(() => {
+    if (attachmentMode === 'auto') return false;
+    const clean = sanitizeFolderPath(attachmentFolder);
+    if (!clean) return false;
+    return !suggestions.includes(clean);
+  }, [attachmentMode, attachmentFolder, suggestions]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]} edges={['top']}>
@@ -180,17 +201,52 @@ export default function SettingsScreen() {
           })}
         </View>
         {attachmentMode !== 'auto' && (
-          <View style={[styles.input, { borderColor: theme.line }]}>
-            <TextInput
-              style={[styles.inputText, { color: theme.ink }]}
-              value={attachmentFolder}
-              onChangeText={setAttachmentFolder}
-              placeholder="img"
-              placeholderTextColor={theme.muted}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
+          <>
+            {suggestions.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="always"
+                contentContainerStyle={styles.suggestions}
+              >
+                {suggestions.map((s) => {
+                  const active = s === sanitizeFolderPath(attachmentFolder);
+                  return (
+                    <Pressable
+                      key={s}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setAttachmentFolder(s);
+                      }}
+                      style={[
+                        styles.chip,
+                        { borderColor: active ? theme.accent : theme.line, backgroundColor: active ? theme.accent + '14' : 'transparent' },
+                      ]}
+                    >
+                      <Text style={[styles.chipText, { color: active ? theme.accent : theme.ink }]}>{s}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+            <View style={[styles.input, { borderColor: theme.line }]}>
+              <TextInput
+                style={[styles.inputText, { color: theme.ink }]}
+                value={attachmentFolder}
+                onChangeText={setAttachmentFolder}
+                placeholder="img"
+                placeholderTextColor={theme.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            {isNewFolder && (
+              // Un typo no falla: crea una carpeta nueva. Mejor decirlo ANTES.
+              <Text style={[styles.warn, { color: theme.accent }]}>
+                «{sanitizeFolderPath(attachmentFolder)}» no está entre tus carpetas: se va a crear.
+              </Text>
+            )}
+          </>
         )}
         <Text style={[styles.note, { color: theme.muted }]}>{attachmentHint(attachmentMode, attachmentFolder)}</Text>
 
@@ -277,5 +333,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   inputText: { fontFamily: fonts.mono, fontSize: 14, paddingVertical: spacing.md },
+  suggestions: { gap: 6, paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
+  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1 },
+  chipText: { fontFamily: fonts.mono, fontSize: 12 },
+  warn: { fontFamily: fonts.sans, fontSize: 12, paddingHorizontal: spacing.xl, paddingTop: spacing.sm, lineHeight: 17 },
   note: { fontFamily: fonts.sans, fontSize: 12, paddingHorizontal: spacing.xl, paddingTop: spacing.md, lineHeight: 17 },
 });

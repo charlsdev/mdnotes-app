@@ -332,8 +332,12 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   por `useTheme`/`_layout`/`MarkdownPreview`), **tamaño de lectura** (`readingScale` → font-size
   en VER `mdToHtml(..,{scale})`, editor MD, y VIVO via bridge `setScale`), **fuente de lectura**
   (`readingFont` sans/serif/mono → solo VER, `mdToHtml(..,{fontStack})`), **carpeta de
-  imágenes** (`attachmentMode` + `attachmentFolder` → ver "Adjuntos"; el campo de texto solo
-  aparece fuera del modo automático, y el pie explica en concreto dónde terminará la foto).
+  imágenes** (`attachmentMode` + `attachmentFolder` → ver "Adjuntos"; el campo solo aparece
+  fuera del modo automático, y el pie explica en concreto dónde terminará la foto). Encima
+  del campo van **chips con las carpetas que ya existen** (`folderSuggestions`, sacadas del
+  índice de imágenes y de las carpetas de las notas) y debajo un aviso si lo tipeado no
+  coincide con ninguna: **un typo acá no falla, CREA una carpeta nueva**, así que hay que
+  avisarlo antes, no después.
 - **Tags** (`src/lib/frontmatter.ts`): editables desde `TagsBar.tsx` (chips), guardados en
   **frontmatter YAML** (`---\ntags: [a,b]\n---`). `computeTags(content)` = frontmatter ∪ `#hashtags`
   del cuerpo. Filtro por tag en la biblioteca (`tagFilter`, barra en el hero). **GOTCHAS**:

@@ -11,6 +11,7 @@ import {
   createImageResolver,
   attachmentFolderFromSetting,
   sanitizeFolderPath,
+  folderSuggestions,
 } from '@/lib/paths';
 import { buildTreeRows } from '@/lib/tree';
 import type { MdFile } from '@/types';
@@ -217,6 +218,23 @@ check('y ese enlace resuelve al archivo guardado',
 const written = encodeRef(relativeTo('README', 'adjuntos/imagen-20260919-214300.jpg'));
 const h16 = render(`![imagen](${written})`);
 check('el markdown generado produce un <img>', h16.includes('<img') && h16.includes(written), h16);
+
+// 19b. Sugerencias de carpeta en Ajustes (tocar en vez de tipear)
+const imgPaths = ['README/img/a.png', 'README/img/b.png', 'Notas/img/c.png', 'assets/logo.png'];
+const noteDirs = ['README', 'Notas', 'Notas/2026'];
+check('modo "junto a la nota" sugiere NOMBRES de carpeta',
+  folderSuggestions('note', imgPaths, noteDirs)[0] === 'img',
+  JSON.stringify(folderSuggestions('note', imgPaths, noteDirs)));
+check('modo "carpeta fija" sugiere RUTAS completas',
+  folderSuggestions('vault', imgPaths, noteDirs)[0] === 'README/img',
+  JSON.stringify(folderSuggestions('vault', imgPaths, noteDirs)));
+check('las carpetas con imágenes van antes que las de notas',
+  folderSuggestions('vault', imgPaths, noteDirs).indexOf('assets') <
+    folderSuggestions('vault', imgPaths, noteDirs).indexOf('Notas/2026'),
+  JSON.stringify(folderSuggestions('vault', imgPaths, noteDirs)));
+check('sin nada de dónde sacarlas, no se inventan sugerencias',
+  folderSuggestions('vault', [], []).length === 0);
+check('no se repiten', new Set(folderSuggestions('note', imgPaths, noteDirs)).size === folderSuggestions('note', imgPaths, noteDirs).length);
 
 // --- Árbol con varias carpetas abiertas ---
 
