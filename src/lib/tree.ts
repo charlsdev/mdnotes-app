@@ -10,6 +10,8 @@ export type TreeRow =
 export interface TreeGroup {
   id: string;
   name: string;
+  // Todas las carpetas de este grupo, incluidas las que no tienen notas.
+  folders?: string[];
 }
 
 interface Node {
@@ -30,12 +32,19 @@ function countFiles(node: Node): number {
 // Filas de un conjunto de notas. `prefix` separa los estados de colapso entre
 // carpetas abiertas: dos vaults pueden tener un `README` cada uno y colapsar uno
 // no debe colapsar el otro.
-function rowsFor(notes: MdFile[], collapsed: Set<string>, baseDepth: number, prefix: string): TreeRow[] {
+function rowsFor(
+  notes: MdFile[],
+  collapsed: Set<string>,
+  baseDepth: number,
+  prefix: string,
+  folders: string[] = []
+): TreeRow[] {
   const root = emptyNode();
-  for (const note of notes) {
-    const parts = (note.folder ?? '').split('/').filter(Boolean);
+
+  // Crea (si hace falta) el nodo de una ruta y lo devuelve.
+  const nodeAt = (path: string): Node => {
     let cur = root;
-    for (const p of parts) {
+    for (const p of path.split('/').filter(Boolean)) {
       let next = cur.folders.get(p);
       if (!next) {
         next = emptyNode();
@@ -43,8 +52,12 @@ function rowsFor(notes: MdFile[], collapsed: Set<string>, baseDepth: number, pre
       }
       cur = next;
     }
-    cur.files.push(note);
-  }
+    return cur;
+  };
+
+  // Primero las carpetas conocidas: así aparecen aunque no tengan ninguna nota.
+  for (const folder of folders) nodeAt(folder);
+  for (const note of notes) nodeAt(note.folder ?? '').files.push(note);
 
   const rows: TreeRow[] = [];
   const walk = (node: Node, depth: number, path: string) => {
@@ -71,17 +84,19 @@ function rowsFor(notes: MdFile[], collapsed: Set<string>, baseDepth: number, pre
 export function buildTreeRows(
   notes: MdFile[],
   collapsed: Set<string>,
-  groups: TreeGroup[] = []
+  groups: TreeGroup[] = [],
+  folders: string[] = []
 ): TreeRow[] {
-  if (groups.length < 2) return rowsFor(notes, collapsed, 0, '');
+  if (groups.length < 2) return rowsFor(notes, collapsed, 0, '', folders);
 
   const rows: TreeRow[] = [];
   for (const group of groups) {
     const mine = notes.filter((n) => (n.vaultId ?? '') === group.id);
-    if (!mine.length) continue;
+    const groupFolders = group.folders ?? [];
+    if (!mine.length && !groupFolders.length) continue;
     const path = `vault:${group.id}`;
     rows.push({ kind: 'vault', key: `v:${group.id}`, depth: 0, name: group.name, path, count: mine.length });
-    if (!collapsed.has(path)) rows.push(...rowsFor(mine, collapsed, 1, group.id));
+    if (!collapsed.has(path)) rows.push(...rowsFor(mine, collapsed, 1, group.id, groupFolders));
   }
   return rows;
 }

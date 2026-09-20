@@ -8,6 +8,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 // funcionan sobre URIs SAF — la legacy no expone la fecha de un content://.
 import { File } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { MdFile } from '@/types';
 import { computeTags, elideDataUris, utf8Length } from '@/utils/text';
 import {
@@ -21,6 +22,7 @@ const LEGACY_VAULT_KEY = 'mdnotes:vault-uri'; // versión de una sola carpeta
 const LAST_VAULT_KEY = 'mdnotes:last-vault'; // dónde se creó la última nota
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+const PDF_RE = /\.pdf$/i;
 const SAF = FileSystem.StorageAccessFramework;
 
 const MIME: Record<string, string> = {
@@ -33,6 +35,10 @@ export interface VaultScan {
   // Ruta relativa (ej. "img/foto.png") → URI SAF del archivo, para resolver
   // imágenes locales que referencian las notas.
   images: Record<string, string>;
+  // TODAS las carpetas encontradas, incluidas las que no tienen notas (img/, bash/…).
+  // El árbol las muestra igual: son parte de la carpeta del usuario, y no verlas
+  // hace parecer que la app no ve todo lo que hay.
+  folders: string[];
 }
 
 export function vaultSupported(): boolean {
@@ -103,7 +109,11 @@ export function vaultIdForUri(s: string): string {
 }
 
 const MAX_DEPTH = 8;
-const MAX_FILES = 1000;
+// Las NOTAS se leen enteras: ese es el límite que importa para el arranque.
+const MAX_NOTES = 1000;
+// Los adjuntos (PDF/imágenes) solo aportan una fila cada uno, pero igual se acotan
+// para no volar la memoria en una carpeta con miles de fotos.
+const MAX_ENTRIES = 5000;
 
 // ¿El hijo es carpeta? Con extensión → archivo (evita llamadas inútiles); si no,
 // intentamos listarlo (las subcarpetas locales SÍ son tree URIs válidos).
@@ -124,11 +134,17 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
   const vaultId = vaultIdForUri(rootUri);
   const out: MdFile[] = [];
   const images: Record<string, string> = {};
+  const folders: string[] = [];
   let mdSeen = 0;
   let firstError: string | null = null;
 
+  // Cortar por notas y por total por separado: si todo contara junto, una carpeta
+  // con miles de fotos podría dejar notas afuera.
+  let noteCount = 0;
+  const full = () => noteCount >= MAX_NOTES || out.length >= MAX_ENTRIES;
+
   async function walk(dirUri: string, rel: string, depth: number): Promise<void> {
-    if (depth > MAX_DEPTH || out.length >= MAX_FILES) return;
+    if (depth > MAX_DEPTH || full()) return;
     let children: string[];
     try {
       children = await SAF.readDirectoryAsync(dirUri);
@@ -137,7 +153,7 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
       return; // subcarpeta ilegible: la saltamos sin romper el escaneo
     }
     for (const uri of children) {
-      if (out.length >= MAX_FILES) return;
+      if (full()) return;
       const name = fileNameFromUri(uri);
       const relPath = rel ? `${rel}/${name}` : name;
       if (MD_RE.test(name)) {
@@ -159,12 +175,47 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
             tags: computeTags(content),
             folder: rel,
           });
+          noteCount++;
         } catch (e: any) {
           if (!firstError) firstError = String(e?.message ?? e);
         }
+      } else if (PDF_RE.test(name)) {
+        // Se listan junto a las notas, pero NO son notas: no tienen contenido que
+        // editar ni tags. Al tocarlos los abre el visor del teléfono.
+        const pdfMtime = fileModifiedAt(uri);
+        out.push({
+          id: vaultIdForUri(uri),
+          kind: 'pdf',
+          uri,
+          dirUri,
+          vaultId,
+          name, // con extensión: '.pdf' es parte de lo que el usuario ve
+          content: '',
+          createdAt: pdfMtime,
+          updatedAt: pdfMtime,
+          folder: rel,
+        });
       } else if (IMG_RE.test(name)) {
+        // Doble registro a propósito: el índice `images` resuelve las referencias de
+        // las notas; la fila hace que la imagen se VEA en el árbol (si no, una
+        // carpeta llena de fotos aparecería vacía).
         images[relPath] = uri;
+        const imgMtime = fileModifiedAt(uri);
+        out.push({
+          id: vaultIdForUri(uri),
+          kind: 'image',
+          uri,
+          dirUri,
+          vaultId,
+          name,
+          content: '',
+          createdAt: imgMtime,
+          updatedAt: imgMtime,
+          folder: rel,
+        });
       } else if (await isDirectory(uri, name)) {
+        // Se anota aunque esté vacía o solo tenga imágenes: el árbol la muestra igual.
+        folders.push(relPath);
         await walk(uri, relPath, depth + 1);
       }
     }
@@ -174,7 +225,7 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
   if (mdSeen > 0 && out.length === 0 && firstError) {
     throw new Error(`No pude leer los .md de la carpeta (${firstError})`);
   }
-  return { files: out, images };
+  return { files: out, images, folders };
 }
 
 // Lee una imagen del vault y la devuelve como data URI (para inyectar en el preview).
@@ -299,6 +350,20 @@ export async function writeVaultFile(
 
 function sanitizeName(baseName: string): string {
   return baseName.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
+}
+
+// Abre un archivo del vault con el visor del teléfono (PDF, por ahora).
+//
+// Por qué IntentLauncher y no `Linking.openURL`: la URI es un `content://` de SAF y
+// el permiso de lectura lo tenemos NOSOTROS. Sin `FLAG_GRANT_READ_URI_PERMISSION` el
+// visor recibe la URI pero no puede leerla. `Linking` no manda ese flag; esto sí.
+export async function openWithSystemViewer(uri: string, fileName?: string): Promise<void> {
+  const ext = ((fileName ?? fileNameFromUri(uri)).split('.').pop() ?? '').toLowerCase();
+  await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+    data: uri,
+    type: ext === 'pdf' ? 'application/pdf' : (MIME[ext] ?? '*/*'),
+    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+  });
 }
 
 // --- Adjuntos (imágenes como archivos del vault, no base64 en el .md) ---

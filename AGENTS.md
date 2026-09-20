@@ -118,6 +118,23 @@ sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
   usada sin preguntar, porque el usuario espera ver el archivo, no un diálogo.
 - Si una carpeta no se puede leer al arrancar (permiso perdido), se descarta **solo
   esa** y el resto carga igual.
+- **PDF e imágenes se listan** junto a las notas (`kind: 'pdf' | 'image'`, sin contenido
+  ni tags) y al tocarlos los abre el **visor del teléfono** (`openWithSystemViewer` →
+  `expo-intent-launcher` con `ACTION_VIEW` + `FLAG_GRANT_READ_URI_PERMISSION`; sin ese
+  flag el visor recibe la URI SAF pero no puede leerla, por eso no sirve `Linking`).
+  `isNote()` los separa: no entran al editor, ni al cajón, ni al índice de enlaces, ni
+  a la cuenta de "N notas".
+  - Las imágenes van **doblemente registradas**: en `images` (resuelve las referencias
+    de las notas) y como fila del árbol. Sin la fila, una carpeta llena de fotos se
+    vería VACÍA ahora que se listan todas las carpetas.
+  - La fila se distingue con la **extensión en mayúsculas** (`fileBadge`), no con un
+    ícono por tipo: es honesto sobre qué es el archivo y se generaliza solo.
+  - Los límites del escaneo van separados (`MAX_NOTES` 1000 / `MAX_ENTRIES` 5000): si
+    todo contara junto, una carpeta con miles de fotos dejaría NOTAS afuera.
+- **Todas las carpetas se listan**, incluidas las que no tienen notas (`img/`, `bash/`).
+  `VaultScan.folders` las junta durante el escaneo (que ya las recorría) y el árbol las
+  muestra aunque estén vacías — como hace Obsidian. Con un filtro activo NO se pasan:
+  filtrando, el árbol debe mostrar lo que coincide, no la estructura entera.
 - El **árbol** antepone una raíz por carpeta solo cuando hay más de una
   (`buildTreeRows(notes, collapsed, groups)`); con una sola se ve como siempre. Los
   estados de colapso van prefijados por carpeta: dos vaults con un `README` cada uno
@@ -247,10 +264,18 @@ Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikil
   carpeta de la nota → nombre suelto. Ante nombres repetidos gana la nota menos anidada,
   con desempate alfabético, para que sea estable entre escaneos. Sin match → se pinta como
   enlace roto (`.wikilink-broken`), nunca como `<a>`.
-- **El tap NO navega en el WebView**: el HTML lleva un listener que hace
-  `postMessage({type:'open-note', id})` y React Native abre la nota (`onOpenNote` →
-  `switchTo`, que guarda lo pendiente). Por eso el `<a>` lleva `data-note` y un `href="#"`
-  inerte. En el **PDF** no se inyecta ni el script ni los backlinks.
+- **GOTCHA: el preview NUNCA debe navegar** (si no, queda EN BLANCO). El documento entra
+  por `source={{html}}`, cuyo base URL en Android es `about:blank`: **cualquier**
+  navegación —incluido un simple `#`— reemplaza la página por una vacía. Por eso:
+  - Los enlaces internos son `<span class="wikilink" data-note="…">`, **nunca `<a href>`**.
+    Un `href="#"` dejaba el preview en blanco cuando el tap no quedaba interceptado.
+  - El script del documento también intercepta las **anclas internas** (`<a href="#fn1">`
+    de las notas al pie) y salta con `scrollIntoView` en vez de navegar.
+  - `onShouldStartLoadWithRequest` solo deja pasar la carga inicial (`about:blank`/`data:`);
+    los `http(s)` se abren fuera con `Linking` y todo lo demás se rechaza.
+  - El tap avisa a RN con `postMessage({type:'open-note', id})` → `onOpenNote` → `switchTo`
+    (que guarda lo pendiente antes de saltar).
+- En el **PDF** no se inyecta ni el script ni los backlinks.
 - **Backlinks** ("Mencionada en"): `backlinksFor()` sobre la copia ligera del store (los
   wikilinks son texto, así que alcanza) y se inyectan al final del HTML del preview.
 - **Embeds de imagen**: `![[foto.png]]` se resuelve contra el índice del vault. Obsidian

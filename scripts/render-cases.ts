@@ -14,7 +14,7 @@ import {
   folderSuggestions,
 } from '@/lib/paths';
 import { buildTreeRows } from '@/lib/tree';
-import type { MdFile } from '@/types';
+import { isNote, fileBadge, type MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
   id,
@@ -48,7 +48,10 @@ const render = (md: string) =>
 // 1. Resolución básica y alias
 const h1 = render('Ver [[Ideas]] y [[Reunión semanal|la reu]].');
 check('[[Ideas]] resuelve a la nota de la raíz', h1.includes('data-note="n1"'), h1);
-check('alias se usa como etiqueta', h1.includes('>la reu</a>'), h1);
+check('alias se usa como etiqueta', h1.includes('>la reu</span>'), h1);
+// Un `href` cualquiera navegaría y, con base URL about:blank, dejaría el preview
+// EN BLANCO. Los enlaces internos NO pueden ser <a href>.
+check('los enlaces internos no llevan href', !/<a[^>]*data-note/.test(h1) && !h1.includes('href="#"'), h1);
 
 // 2. Ruta y ancla
 const h2 = render('[[Proyectos/Ideas]] y [[Reunión semanal#Acuerdos]]');
@@ -58,6 +61,14 @@ check('el #ancla no rompe la resolución', h2.includes('data-note="n2"'), h2);
 // 3. Enlace roto
 const h3 = render('[[No existe esta nota]]');
 check('enlace roto → span, no <a>', h3.includes('wikilink-broken') && !h3.includes('<a'), h3);
+
+// Las notas al pie SÍ generan <a href="#…">, que navegando dejaría la página en
+// blanco: el script del documento tiene que interceptarlas.
+const hFoot = render('Texto con nota[^1]\n\n[^1]: La nota');
+check('las notas al pie siguen generando anclas internas', hFoot.includes('href="#'), hFoot.slice(0, 200));
+const withBridge = mdToHtml('x', 'light', { resolveLink });
+check('el script del preview salta a las anclas sin navegar', withBridge.includes('scrollIntoView'));
+check('y avisa a RN de los enlaces internos', withBridge.includes('open-note'));
 
 // 4. EL CASO CRÍTICO: nada de esto debe convertirse en enlace
 const code = ['```python', 'arr[[0]] = x', 'ref = doc[[1]]', '```', '', 'Inline: `[[no soy enlace]]`'].join('\n');
@@ -295,6 +306,64 @@ const onlyV2 = buildTreeRows(multi.filter((n) => n.vaultId === 'v2'), new Set(),
 check('no se muestran raíces de carpetas sin notas',
   onlyV2.filter((r) => r.kind === 'vault').length === 1,
   JSON.stringify(onlyV2.filter((r) => r.kind === 'vault').map((r) => r.name)));
+
+// 23b. Los PDF se listan en el árbol pero NO son notas
+const pdf = (id: string, name: string, vaultId: string, folder = ''): MdFile => ({
+  id, kind: 'pdf', name, content: '', createdAt: 0, updatedAt: 0, folder, vaultId, uri: `content://${id}`,
+});
+const withPdfs = [vNote('n1', 'Nota', 'v1'), pdf('p1', 'manual.pdf', 'v1'), pdf('p2', 'guia.pdf', 'v1', 'Docs')];
+const pdfRows = buildTreeRows(withPdfs, new Set());
+check('los PDF aparecen como filas del árbol', pdfRows.filter((r) => r.kind === 'file').length === 3,
+  JSON.stringify(pdfRows.map((r) => (r.kind === 'file' ? r.name : r.name))));
+check('un PDF en subcarpeta queda dentro de ella',
+  pdfRows.some((r) => r.kind === 'folder' && r.name === 'Docs'));
+check('isNote distingue notas de PDF', isNote(withPdfs[0]) && !isNote(withPdfs[1]));
+
+// La etiqueta de la fila es la EXTENSIÓN: sirve igual para tipos que no conocemos.
+const img = (name: string): MdFile => ({
+  id: name, kind: 'image', name, content: '', createdAt: 0, updatedAt: 0, vaultId: 'v1', uri: 'content://i',
+});
+check('una nota no lleva etiqueta', fileBadge(withPdfs[0]) === '');
+check('un PDF lleva PDF', fileBadge(withPdfs[1]) === 'PDF');
+check('una imagen lleva su extensión', fileBadge(img('foto.PNG')) === 'PNG', fileBadge(img('foto.PNG')));
+check('jpeg entra en la etiqueta', fileBadge(img('x.jpeg')) === 'JPEG');
+check('una extensión larga cae a ARCHIVO', fileBadge(img('x.sketchfile')) === 'ARCHIVO');
+check('las imágenes también se listan en el árbol',
+  buildTreeRows([vNote('n1', 'Nota', 'v1'), img('foto.png')], new Set()).filter((r) => r.kind === 'file').length === 2);
+check('una nota vieja sin `kind` sigue siendo nota',
+  isNote({ id: 'x', name: 'Vieja', content: '', createdAt: 0, updatedAt: 0 }));
+check('los PDF no entran al índice de enlaces',
+  resolveWikilink('manual', '', buildLinkIndex(withPdfs.filter(isNote))) === null);
+
+// 23c. Carpetas sin notas: el árbol las muestra igual (como Obsidian)
+const soloNotaRaiz = [vNote('n1', 'Nota', 'v1')];
+const todasLasCarpetas = ['bash', 'docs', 'img', 'docs/2026'];
+const conVacias = buildTreeRows(soloNotaRaiz, new Set(), [], todasLasCarpetas);
+// Ojo: la lista es plana, así que la anidada ('2026') sale entre 'docs' e 'img';
+// para el orden alfabético solo cuentan las de primer nivel.
+check('las carpetas sin notas aparecen en el árbol',
+  conVacias.filter((r) => r.kind === 'folder' && r.depth === 0).map((r) => r.name).join(',') === 'bash,docs,img',
+  JSON.stringify(conVacias.filter((r) => r.kind === 'folder').map((r) => [r.name, r.depth])));
+check('una carpeta vacía muestra 0',
+  conVacias.some((r) => r.kind === 'folder' && r.name === 'img' && r.count === 0));
+check('las anidadas quedan dentro de su padre',
+  conVacias.some((r) => r.kind === 'folder' && r.name === '2026' && r.depth === 1),
+  JSON.stringify(conVacias.filter((r) => r.kind === 'folder').map((r) => [r.name, r.depth])));
+check('sin lista de carpetas, el árbol se comporta como antes',
+  buildTreeRows(soloNotaRaiz, new Set()).filter((r) => r.kind === 'folder').length === 0);
+check('colapsar una carpeta vacía oculta sus hijas',
+  buildTreeRows(soloNotaRaiz, new Set(['docs']), [], todasLasCarpetas)
+    .filter((r) => r.kind === 'folder').length === 3);
+
+// Con varias carpetas abiertas, cada grupo trae las suyas
+const gruposConCarpetas = [
+  { id: 'v1', name: 'Trabajo', folders: ['img'] },
+  { id: 'v2', name: 'Personal', folders: ['fotos'] },
+];
+const rowsGrupos = buildTreeRows(multi.filter((n) => n.vaultId !== ''), new Set(), gruposConCarpetas);
+check('cada carpeta abierta muestra SUS carpetas vacías',
+  rowsGrupos.filter((r) => r.kind === 'folder' && (r.name === 'img' || r.name === 'fotos')).length === 2,
+  JSON.stringify(rowsGrupos.filter((r) => r.kind === 'folder').map((r) => r.name)));
 
 // 24. Los [[enlaces]] no cruzan carpetas
 const linked = [

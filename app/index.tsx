@@ -21,7 +21,8 @@ import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { useFilesStore } from '@/storage/store';
 import { relativeTime, preview, deriveName } from '@/utils/text';
-import { MdFile } from '@/types';
+import { MdFile, isNote } from '@/types';
+import { openWithSystemViewer } from '@/storage/vault';
 import { Wordmark } from '@/components/Wordmark';
 import { Footer } from '@/components/Footer';
 import { NoteTree } from '@/components/NoteTree';
@@ -58,14 +59,33 @@ function GearIcon({ color }: { color: string }) {
 export default function LibraryScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { files, loaded, loading, load, create, createWith, remove, vaults, lastVaultId, openVault, closeVault } =
-    useFilesStore();
+  const {
+    files,
+    loaded,
+    loading,
+    load,
+    create,
+    createWith,
+    remove,
+    vaults,
+    vaultFolders,
+    lastVaultId,
+    openVault,
+    closeVault,
+  } = useFilesStore();
   const [query, setQuery] = useState('');
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loaded) load();
   }, [loaded]);
+
+  // Los PDF e imágenes se listan pero no son notas: se cuentan aparte para no
+  // inflar el número.
+  const noteCount = useMemo(() => files.filter(isNote).length, [files]);
+  const otherCount = files.length - noteCount;
+
+  const isFiltering = query.trim().length > 0 || tagFilter !== null;
 
   // Todos los tags únicos (para la barra de filtro).
   const allTags = useMemo(() => {
@@ -78,10 +98,21 @@ export default function LibraryScreen() {
   // van a un grupo propio al final. Con una sola, sin grupos (el árbol de siempre).
   const treeGroups = useMemo(() => {
     if (vaults.length < 2) return undefined;
-    const groups = vaults.map((v) => ({ id: v.id, name: v.name }));
+    const groups: { id: string; name: string; folders?: string[] }[] = vaults.map((v) => ({
+      id: v.id,
+      name: v.name,
+      folders: isFiltering ? undefined : vaultFolders[v.id],
+    }));
     if (files.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
     return groups;
-  }, [vaults, files]);
+  }, [vaults, files, vaultFolders, isFiltering]);
+
+  // Carpetas vacías: se muestran solo sin filtro activo. Filtrando, el árbol debe
+  // enseñar lo que coincide, no la estructura entera.
+  const treeFolders = useMemo(() => {
+    if (isFiltering || vaults.length !== 1) return undefined;
+    return vaultFolders[vaults[0].id];
+  }, [isFiltering, vaults, vaultFolders]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -125,8 +156,24 @@ export default function LibraryScreen() {
 
   // Navega al editor pasando el id como PARÁMETRO (se codifica bien; los id de
   // vault son URIs SAF con / y : que romperían la ruta si se interpolan).
+  // Una nota abre el editor; lo demás (PDF, imágenes) no se edita: lo abre el visor
+  // del teléfono.
   const openNote = useCallback(
-    (note: MdFile) => router.push({ pathname: '/editor/[id]', params: { id: note.id } }),
+    (note: MdFile) => {
+      if (!isNote(note)) {
+        if (!note.uri) return;
+        openWithSystemViewer(note.uri, note.name).catch((e: any) =>
+          appAlert(
+            `No pude abrir "${note.name}"`,
+            `${e?.message ?? e}\n\nPuede que no tengas una app instalada que abra ese tipo de archivo.`,
+            undefined,
+            { variant: 'error' }
+          )
+        );
+        return;
+      }
+      router.push({ pathname: '/editor/[id]', params: { id: note.id } });
+    },
     [router]
   );
 
@@ -301,7 +348,12 @@ export default function LibraryScreen() {
             : `— ${vaults.length} CARPETAS`}
       </Text>
       <Text style={[styles.heroTitle, { color: theme.ink }]}>
-        {files.length} {files.length === 1 ? 'nota' : 'notas'}
+        {noteCount} {noteCount === 1 ? 'nota' : 'notas'}
+        {otherCount > 0 && (
+          <Text style={{ color: theme.muted }}>
+            {`  ·  ${otherCount} ${otherCount === 1 ? 'archivo' : 'archivos'}`}
+          </Text>
+        )}
       </Text>
       <View style={[styles.searchPill, { backgroundColor: theme.bg2 }]}>
         <View style={[styles.dot, { backgroundColor: theme.muted }]} />
@@ -377,6 +429,7 @@ export default function LibraryScreen() {
         <NoteTree
           notes={filtered}
           groups={treeGroups}
+          folders={treeFolders}
           onSelect={openNote}
           onLongPressFile={confirmDelete}
           header={heroHeader}

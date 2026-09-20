@@ -109,14 +109,20 @@ function wikilinks(md: MarkdownIt) {
 
   const esc = md.utils.escapeHtml;
 
+  // OJO: los enlaces internos son `<span>`, NO `<a href="#">`. El documento se carga
+  // con `source={{html}}` (base URL `about:blank`): cualquier navegación, incluido un
+  // `#`, reemplaza la página por una EN BLANCO. Sin href no hay nada que navegar; el
+  // tap lo maneja el script del preview vía `data-note`.
+  const noteLink = (id: string, label: string) =>
+    `<span class="wikilink" role="link" data-note="${esc(id)}">${esc(label)}</span>`;
+
   md.renderer.rules.wikilink = (tokens, idx, _opts, env: any) => {
     const { target, label } = tokens[idx].meta;
     const id = env?.resolveLink?.(target);
     if (!id) {
       return `<span class="wikilink wikilink-broken" title="No encontré esa nota">${esc(label)}</span>`;
     }
-    // El tap lo intercepta el script del preview (data-note), no el href.
-    return `<a class="wikilink" href="#" data-note="${esc(id)}">${esc(label)}</a>`;
+    return noteLink(id, label);
   };
 
   md.renderer.rules.wikiembed = (tokens, idx, _opts, env: any) => {
@@ -127,7 +133,7 @@ function wikilinks(md: MarkdownIt) {
     }
     const id = env?.resolveLink?.(target);
     if (!id) return `<span class="wikilink wikilink-broken" title="No encontré eso">${esc(label)}</span>`;
-    return `<a class="wikilink" href="#" data-note="${esc(id)}">${esc(label)}</a>`;
+    return noteLink(id, label);
   };
 }
 
@@ -241,7 +247,8 @@ function pageCss(
     th { background: ${p.codeBg}; font-weight: 600; }
     mark { background: ${p.accent}33; color: inherit; padding: 0 2px; border-radius: 3px; }
     /* Enlaces internos [[nota]] */
-    .wikilink { color: ${p.accent}; text-decoration: none; border-bottom: 1px solid ${p.accent}55; }
+    .wikilink { color: ${p.accent}; text-decoration: none; border-bottom: 1px solid ${p.accent}55;
+      cursor: pointer; -webkit-tap-highlight-color: ${p.accent}33; }
     .wikilink-broken { color: ${p.muted}; border-bottom: 1px dotted ${p.muted}; cursor: default; }
     .backlinks { border-top: 1px solid ${p.line}; margin-top: 2.5em; padding-top: 1em; font-size: .9em; }
     .backlinks h2 { font-family: inherit; font-size: .8em; letter-spacing: 1.5px; text-transform: uppercase;
@@ -295,11 +302,28 @@ const DEFAULT_FONT = `-apple-system, Roboto, system-ui, sans-serif`;
 // WebView no tiene a dónde ir, la nota la abre React Native. En el PDF no va.
 const LINK_BRIDGE = `<script>
 document.addEventListener('click', function (e) {
-  var a = e.target && e.target.closest ? e.target.closest('[data-note]') : null;
-  if (!a) return;
-  e.preventDefault();
-  if (window.ReactNativeWebView) {
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'open-note', id: a.getAttribute('data-note') }));
+  var el = e.target;
+  while (el && el.nodeType !== 1) el = el.parentNode;   // por si el target es texto
+  var node = null, anchor = null;
+  for (var n = el; n; n = n.parentNode) {
+    if (n.nodeType !== 1) continue;
+    if (!node && n.hasAttribute('data-note')) node = n;
+    if (!anchor && n.tagName === 'A' && (n.getAttribute('href') || '').charAt(0) === '#') anchor = n;
+  }
+  if (node) {
+    e.preventDefault();
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'open-note', id: node.getAttribute('data-note') }));
+    }
+    return;
+  }
+  // Anclas internas (notas al pie): navegar a '#x' recargaría about:blank y dejaría
+  // la página EN BLANCO. Saltamos nosotros, sin navegar.
+  if (anchor) {
+    e.preventDefault();
+    var id = decodeURIComponent(anchor.getAttribute('href').slice(1));
+    var target = id && (document.getElementById(id) || document.getElementsByName(id)[0]);
+    if (target && target.scrollIntoView) target.scrollIntoView();
   }
 }, true);
 </script>`;
@@ -307,7 +331,10 @@ document.addEventListener('click', function (e) {
 function backlinksHtml(backlinks: Array<{ id: string; name: string }>): string {
   if (!backlinks.length) return '';
   const items = backlinks
-    .map((b) => `<li><a class="wikilink" href="#" data-note="${md.utils.escapeHtml(b.id)}">${md.utils.escapeHtml(b.name)}</a></li>`)
+    .map(
+      (b) =>
+        `<li><span class="wikilink" role="link" data-note="${md.utils.escapeHtml(b.id)}">${md.utils.escapeHtml(b.name)}</span></li>`
+    )
     .join('');
   return `<div class="backlinks"><h2>Mencionada en</h2><ul>${items}</ul></div>`;
 }

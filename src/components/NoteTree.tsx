@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, FlatList } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing } from '@/theme';
-import { MdFile } from '@/types';
+import { MdFile, fileBadge } from '@/types';
 import { buildTreeRows, type TreeGroup } from '@/lib/tree';
 
 function Chevron({ open, color }: { open: boolean; color: string }) {
@@ -23,6 +23,7 @@ export function NoteTree({
   header,
   footer,
   groups,
+  folders,
 }: {
   notes: MdFile[];
   onSelect: (note: MdFile) => void;
@@ -32,11 +33,16 @@ export function NoteTree({
   footer?: React.ReactElement;
   // Carpetas abiertas. Con más de una, el árbol antepone una raíz por carpeta.
   groups?: TreeGroup[];
+  // Todas las carpetas del vault (para mostrar también las que no tienen notas).
+  folders?: string[];
 }) {
   const theme = useTheme();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const rows = useMemo(() => buildTreeRows(notes, collapsed, groups), [notes, collapsed, groups]);
+  const rows = useMemo(
+    () => buildTreeRows(notes, collapsed, groups, folders),
+    [notes, collapsed, groups, folders]
+  );
 
   const toggle = (path: string) =>
     setCollapsed((prev) => {
@@ -93,6 +99,7 @@ export function NoteTree({
           );
         }
         const active = item.note.id === currentId;
+        const badge = fileBadge(item.note);
         return (
           <Pressable
             onPress={() => onSelect(item.note)}
@@ -106,9 +113,14 @@ export function NoteTree({
             ]}
           >
             <View style={[styles.dot, { backgroundColor: active ? theme.accent : theme.line }]} />
-            <Text style={[styles.fileName, { color: active ? theme.accent : theme.ink }]} numberOfLines={1}>
+            <Text
+              style={[styles.fileName, { color: badge ? theme.muted : active ? theme.accent : theme.ink }]}
+              numberOfLines={1}
+            >
               {item.name}
             </Text>
+            {/* Extensión del archivo: marca lo que NO es una nota (se abre fuera). */}
+            {!!badge && <Text style={[styles.badge, { color: theme.sepia, borderColor: theme.line }]}>{badge}</Text>}
           </Pressable>
         );
       }}
@@ -144,4 +156,13 @@ const styles = StyleSheet.create({
   },
   dot: { width: 5, height: 5, borderRadius: 3 },
   fileName: { flex: 1, fontFamily: fonts.sans, fontSize: 14 },
+  badge: {
+    fontFamily: fonts.mono,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderRadius: 4,
+  },
 });

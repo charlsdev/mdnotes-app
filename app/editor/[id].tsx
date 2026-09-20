@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useTheme, fonts, spacing, type Theme } from '@/theme';
 import { useFilesStore } from '@/storage/store';
-import { MdFile, EditorMode } from '@/types';
+import { MdFile, EditorMode, isNote } from '@/types';
 import { EditorToolbar } from '@/components/EditorToolbar';
 import { ModeToggle } from '@/components/ModeToggle';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
@@ -82,18 +82,21 @@ export default function EditorScreen() {
     () => (file?.vaultId ? (vaultImages[file.vaultId] ?? {}) : {}),
     [vaultImages, file?.vaultId]
   );
+  // Solo NOTAS: los PDF del árbol no se editan, no se enlazan y no aparecen en el
+  // cajón para saltar de nota.
+  const notes = useMemo(() => files.filter(isNote), [files]);
   const vaultFiles = useMemo(
-    () => files.filter((f) => (f.vaultId ?? '') === (file?.vaultId ?? '')),
-    [files, file?.vaultId]
+    () => notes.filter((f) => (f.vaultId ?? '') === (file?.vaultId ?? '')),
+    [notes, file?.vaultId]
   );
 
   // Para el cajón (saltar de nota): con varias carpetas, separadas por carpeta.
   const treeGroups = useMemo(() => {
     if (vaults.length < 2) return undefined;
     const groups = vaults.map((v) => ({ id: v.id, name: v.name }));
-    if (files.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
+    if (notes.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
     return groups;
-  }, [vaults, files]);
+  }, [vaults, notes]);
 
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
   // antes de pasar el contenido al preview (el WebView no lee content:// sueltos).
@@ -466,9 +469,10 @@ export default function EditorScreen() {
     router.replace({ pathname: '/editor/[id]', params: { id: note.id } });
   };
 
-  // Tap en un [[enlace interno]] del preview.
+  // Tap en un [[enlace interno]] del preview. Solo notas: el índice de enlaces ya
+  // excluye los PDF, pero no dependemos de eso para no abrir un PDF en el editor.
   const openNoteById = (noteId: string) => {
-    const target = files.find((f) => f.id === noteId);
+    const target = notes.find((f) => f.id === noteId);
     if (target) switchTo(target);
   };
 
@@ -520,7 +524,7 @@ export default function EditorScreen() {
 
       <NoteTreeDrawer
         visible={drawerOpen}
-        notes={files}
+        notes={notes}
         groups={treeGroups}
         currentId={id}
         onSelect={switchTo}

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { MdFile } from '@/types';
+import { MdFile, isNote } from '@/types';
 import * as FilesAPI from '@/storage/files';
 import * as Vault from '@/storage/vault';
 import { computeTags, elideDataUris } from '@/utils/text';
@@ -20,6 +20,8 @@ interface FilesState {
   // Índice de imágenes POR carpeta: dos carpetas pueden tener un `img/logo.png`
   // cada una, y un índice plano mostraría la imagen equivocada.
   vaultImages: Record<string, Record<string, string>>;
+  // Todas las carpetas de cada vault, incluidas las que no tienen notas.
+  vaultFolders: Record<string, string[]>;
   // Carpeta donde se creó la última nota (se ofrece primero al preguntar destino).
   lastVaultId: string | null;
   load: () => Promise<void>;
@@ -66,6 +68,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
   loaded: false,
   vaults: [],
   vaultImages: {},
+  vaultFolders: {},
   lastVaultId: null,
 
   load: async () => {
@@ -75,6 +78,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
     const vaults: VaultRef[] = [];
     const vaultFiles: MdFile[] = [];
     const images: Record<string, Record<string, string>> = {};
+    const folders: Record<string, string[]> = {};
 
     for (const uri of uris) {
       try {
@@ -83,6 +87,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
         vaults.push({ id, uri, name: Vault.vaultName(uri) });
         vaultFiles.push(...scan.files);
         images[id] = scan.images;
+        folders[id] = scan.folders;
       } catch {
         // Permiso perdido (carpeta movida / revocada): olvidamos ESA carpeta y
         // seguimos con el resto — una rota no puede dejarte sin las demás.
@@ -96,6 +101,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       files: [...vaultFiles, ...internal].sort(byRecent),
       vaults,
       vaultImages: images,
+      vaultFolders: folders,
       lastVaultId: await Vault.getLastVaultId(),
       loading: false,
       loaded: true,
@@ -110,7 +116,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
     const id = Vault.vaultIdForUri(uri);
     if (get().vaults.some((v) => v.id === id)) {
       const name = Vault.vaultName(uri);
-      return { name, count: get().files.filter((f) => f.vaultId === id).length, already: true };
+      return { name, count: get().files.filter((f) => f.vaultId === id && isNote(f)).length, already: true };
     }
     set({ loading: true }); // escanear la carpeta (leer los .md) puede tardar
     try {
@@ -122,10 +128,12 @@ export const useFilesStore = create<FilesState>((set, get) => ({
         vaults,
         files: [...scan.files, ...get().files].sort(byRecent),
         vaultImages: { ...get().vaultImages, [id]: scan.images },
+        vaultFolders: { ...get().vaultFolders, [id]: scan.folders },
         loaded: true,
         loading: false,
       });
-      return { name: vault.name, count: scan.files.length };
+      // Solo notas: los PDF se listan, pero decir "12 notas" contándolos mentiría.
+      return { name: vault.name, count: scan.files.filter(isNote).length };
     } catch (e) {
       // No dejes persistida una carpeta que no se puede leer (ej. Google Drive).
       // Las que ya estaban abiertas no se tocan.
@@ -140,10 +148,13 @@ export const useFilesStore = create<FilesState>((set, get) => ({
     await Vault.setVaultUris(vaults.map((v) => v.uri));
     const images = { ...get().vaultImages };
     delete images[vaultId];
+    const folders = { ...get().vaultFolders };
+    delete folders[vaultId];
     set({
       vaults,
       files: get().files.filter((f) => f.vaultId !== vaultId),
       vaultImages: images,
+      vaultFolders: folders,
       lastVaultId: get().lastVaultId === vaultId ? null : get().lastVaultId,
     });
   },

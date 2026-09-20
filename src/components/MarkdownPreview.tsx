@@ -36,13 +36,16 @@ export function MarkdownPreview({
       style={[styles.web, { backgroundColor: background }]}
       originWhitelist={['*']}
       source={{ html }}
-      // El documento se carga dentro; los enlaces http(s) se abren fuera del WebView.
+      // El documento entra por `source={{html}}` y NUNCA debe navegar a otro lado:
+      // su base URL es `about:blank`, así que cualquier navegación (incluido un `#`)
+      // lo reemplaza por una página en blanco. Los http(s) se abren fuera; el resto
+      // se rechaza y lo maneja el script del documento (enlaces internos, anclas).
       onShouldStartLoadWithRequest={(req) => {
-        if (/^https?:/.test(req.url)) {
+        if (/^https?:/i.test(req.url)) {
           Linking.openURL(req.url);
           return false;
         }
-        return true;
+        return req.url === 'about:blank' || req.url.startsWith('data:');
       }}
       // Tap en un [[enlace interno]]: el documento no navega, abre la nota en RN.
       onMessage={(e) => {
