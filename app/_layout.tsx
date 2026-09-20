@@ -64,6 +64,7 @@ export default function RootLayout() {
             >
               <Stack.Screen name="index" />
               <Stack.Screen name="editor/[id]" />
+              <Stack.Screen name="pdf/[id]" />
               <Stack.Screen name="settings" />
             </Stack>
           </AlertProvider>

@@ -26,6 +26,19 @@ node build.mjs       # → assets/webeditor.html
 El resto de la app lo consume como asset; no necesita nada más. `webeditor/` está excluido
 de la compilación de la app (tsconfig / metro blockList / .easignore).
 
+## Visor de PDF — regenerar el asset
+
+Igual que el editor, pero con **pdf.js** (`assets/pdfviewer.html`, ~1,8 MB). Solo hace
+falta si tocas `pdfviewer/src/*`:
+
+```bash
+cd pdfviewer
+npm install          # una vez (tiene su propio node_modules)
+node build.mjs       # → assets/pdfviewer.html
+```
+
+`pdfviewer/` también está excluido en tsconfig / metro blockList / .easignore.
+
 ## Probar: Expo Go vs APK
 
 > ⚠️ **MDNotes ya NO corre en Expo Go.** Usa `react-native-keyboard-controller`, que

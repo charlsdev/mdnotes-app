@@ -137,6 +137,42 @@ function wikilinks(md: MarkdownIt) {
   };
 }
 
+// Enlaces Markdown normales a archivos de la carpeta: `[texto](OTRA.md)`,
+// `[x](./docs/y.md)`. Son tan comunes como los [[wikilinks]] — y dejarlos como
+// `<a href>` es peor que inútil: al tocarlos el WebView navega y el preview queda
+// EN BLANCO. Se les quita el href (un `<a>` sin href es inerte) y se los marca con
+// `data-note` para que el tap lo maneje React Native, igual que un wikilink.
+// Los `#ancla` conservan su href: el script del documento los resuelve saltando.
+const EXTERNAL_HREF_RE = /^[a-z][a-z0-9+.-]*:/i;
+
+function localLinks(md: MarkdownIt) {
+  const renderToken = (t: any, i: number, o: any, _e: any, self: any) => self.renderToken(t, i, o);
+  const prevOpen = md.renderer.rules.link_open || renderToken;
+
+  md.renderer.rules.link_open = function (tokens, idx, opts, env: any, self) {
+    const token = tokens[idx];
+    const href = token.attrGet('href') ?? '';
+    if (href && !EXTERNAL_HREF_RE.test(href) && !href.startsWith('#')) {
+      let target = href;
+      try {
+        target = decodeURIComponent(href);
+      } catch {
+        // href con % suelto: se usa tal cual
+      }
+      const id = env?.resolveLink?.(target.replace(/[#?].*$/, ''));
+      token.attrs = (token.attrs ?? []).filter(([name]) => name !== 'href');
+      if (id) {
+        token.attrJoin('class', 'wikilink');
+        token.attrSet('data-note', id);
+      } else {
+        token.attrJoin('class', 'wikilink wikilink-broken');
+        token.attrSet('title', 'No encontré ese archivo');
+      }
+    }
+    return prevOpen(tokens, idx, opts, env, self);
+  };
+}
+
 const md = new MarkdownIt({
   html: true, // permite <img>, <u>, etc. (contenido propio del usuario)
   linkify: true,
@@ -155,7 +191,8 @@ const md = new MarkdownIt({
   .use(taskListsPlugin, { label: true })
   .use(katexPlugin)
   .use(githubAlerts)
-  .use(wikilinks);
+  .use(wikilinks)
+  .use(localLinks);
 
 // Crepe (VIVO) escapa los corchetes al reserializar (`> \[!NOTE]`, `\[\[nota]]`),
 // y eso rompe tanto las alertas como los enlaces internos. Los des-escapamos antes

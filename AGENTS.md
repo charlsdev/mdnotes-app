@@ -119,7 +119,8 @@ sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
 - Si una carpeta no se puede leer al arrancar (permiso perdido), se descarta **solo
   esa** y el resto carga igual.
 - **PDF e imágenes se listan** junto a las notas (`kind: 'pdf' | 'image'`, sin contenido
-  ni tags) y al tocarlos los abre el **visor del teléfono** (`openWithSystemViewer` →
+  ni tags). Los **PDF se ven DENTRO de la app** (ver abajo); las imágenes y cualquier
+  otro tipo los abre el **visor del teléfono** (`openWithSystemViewer` →
   `expo-intent-launcher` con `ACTION_VIEW` + `FLAG_GRANT_READ_URI_PERMISSION`; sin ese
   flag el visor recibe la URI SAF pero no puede leerla, por eso no sirve `Linking`).
   `isNote()` los separa: no entran al editor, ni al cajón, ni al índice de enlaces, ni
@@ -269,6 +270,12 @@ Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikil
   navegación —incluido un simple `#`— reemplaza la página por una vacía. Por eso:
   - Los enlaces internos son `<span class="wikilink" data-note="…">`, **nunca `<a href>`**.
     Un `href="#"` dejaba el preview en blanco cuando el tap no quedaba interceptado.
+  - Lo mismo vale para los **enlaces Markdown normales a archivos de la carpeta**
+    (`[texto](OTRA.md)`, tan comunes como los wikilinks): el plugin `localLinks` les
+    QUITA el href (un `<a>` sin href es inerte) y les pone `data-note`. Resuelven con
+    el mismo índice, así que `[x](../docs/y.md)` y `[[y]]` llevan al mismo lado, y un
+    `[manual](manual.pdf)` abre el visor. Los que tienen esquema (`http:`, `mailto:`)
+    conservan su href y los abre `Linking`.
   - El script del documento también intercepta las **anclas internas** (`<a href="#fn1">`
     de las notas al pie) y salta con `scrollIntoView` en vez de navegar.
   - `onShouldStartLoadWithRequest` solo deja pasar la carga inicial (`about:blank`/`data:`);
@@ -286,6 +293,33 @@ Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikil
   (`shortestLinkLabel`), igual que Obsidian.
 - VIVO muestra los enlaces como texto plano (Crepe no los conoce); lo importante es que
   **no los corrompa** al reserializar — de eso se encarga `unescapeMarkers`.
+
+## Visor de PDF (pdf.js) — `pdfviewer/` → `assets/pdfviewer.html`
+
+Mismo patrón que `webeditor/`: proyecto aparte con su propio `node_modules`, bundleado
+con esbuild a un HTML autónomo que se carga como **asset** en un WebView
+(`src/components/PdfViewer.tsx`, pantalla `app/pdf/[id].tsx`). Regenerar tras tocar
+`pdfviewer/src/*`: `cd pdfviewer && npm install && node build.mjs` (~1,8 MB).
+
+- **GOTCHA del worker**: dentro de un WebView cargado desde `file://` NO se puede
+  construir un `Worker` (bloqueado por origen), y pdf.js quedaría cargando para siempre.
+  La salida es empaquetar el worker en la MISMA página y exponerlo como
+  `globalThis.pdfjsWorker`: con eso `PDFWorker._initialize()` usa su "fake worker" y
+  hace todo en el mismo hilo, sin `new Worker` ni `import()` dinámico. **No lo cambies
+  por `GlobalWorkerOptions.workerSrc`.** Hay un smoke test del camino completo (parsea
+  un PDF real con `Worker` saboteado) en el historial de esta feature.
+- **El PDF se copia a la caché antes de abrirlo** (`app/pdf/[id].tsx`): el WebView no
+  puede leer el `content://` de la carpeta, y pdf.js busca el archivo por XHR desde el
+  documento. Por eso el WebView lleva `allowFileAccess*`/`allowUniversalAccessFromFileURLs`.
+  La carpeta de caché se vacía en cada apertura: solo vive el PDF que estás viendo.
+- Las páginas se renderizan **de a una** (la primera se ve enseguida en documentos
+  largos) y el `devicePixelRatio` se capa a 2 — en pantallas 3x un PDF largo agota la
+  memoria del WebView.
+- El zoom es el **pinch nativo** del WebView, no un re-render de pdf.js.
+- Queda un botón para abrir con el visor del teléfono como respaldo, y si pdf.js falla
+  la pantalla lo ofrece sola.
+- **Fuentes**: los PDF que no embeben sus fuentes (las 14 estándar) se dibujan con las
+  del teléfono; no empaquetamos `standard_fonts` (+1,5 MB) por eso.
 
 ## Editor: 3 modos — VIVO / MD / VER (`EditorMode = 'live' | 'code' | 'view'`)
 

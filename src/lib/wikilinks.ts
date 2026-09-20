@@ -2,6 +2,7 @@
 // y el embed `![[archivo]]`. El destino NO es una URL: es una ruta relativa dentro
 // del vault, sin extensión, que hay que resolver contra las notas conocidas.
 import { MdFile } from '@/types';
+import { resolveRel } from '@/lib/paths';
 
 // `!` opcional (embed) + destino + `#sección`/`^bloque` opcional + `|alias` opcional.
 // El destino no admite `[`, `]` ni `|` para no tragarse enlaces mal cerrados.
@@ -46,14 +47,24 @@ export function buildLinkIndex(files: MdFile[]): LinkIndex {
   return { byPath, byName };
 }
 
-// Destino → id de nota, o null si no existe (enlace roto). Se prueba primero como
+// Destino → id de archivo, o null si no existe (enlace roto). Se prueba primero como
 // ruta desde la raíz del vault (como Obsidian), después relativa a la carpeta de la
 // nota que enlaza, y por último como nombre suelto.
+//
+// Resuelve tanto destinos de `[[wikilink]]` como los de un enlace Markdown normal
+// (`[texto](../otra/NOTA.md)`), por eso pasa por `resolveRel`: esos traen `./` y `../`.
 export function resolveWikilink(target: string, folder: string, index: LinkIndex): string | null {
   const t = norm(target);
   if (!t) return null;
   const fromFolder = folder ? norm(`${folder}/${t}`) : t;
-  return index.byPath[t] ?? index.byPath[fromFolder] ?? index.byName[basename(t)] ?? null;
+  const viaRel = norm(resolveRel(folder, target));
+  return (
+    index.byPath[t] ??
+    index.byPath[fromFolder] ??
+    index.byPath[viaRel] ??
+    index.byName[basename(t)] ??
+    null
+  );
 }
 
 // Cómo escribir el enlace a esta nota: con el nombre suelto si no es ambiguo, y con

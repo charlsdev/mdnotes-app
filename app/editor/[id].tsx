@@ -29,7 +29,7 @@ import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
 import { relativeTo, encodeRef, createImageResolver, attachmentFolderFromSetting } from '@/lib/paths';
 import { WikilinkSuggestions } from '@/components/WikilinkSuggestions';
-import { readImageDataUri, saveVaultImage, attachmentFolderFor } from '@/storage/vault';
+import { readImageDataUri, saveVaultImage, attachmentFolderFor, openWithSystemViewer } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
 import { deriveName, computeTags } from '@/utils/text';
 import { splitFrontmatter, stripFrontmatter, getFrontmatterTags, setFrontmatterTags } from '@/lib/frontmatter';
@@ -82,12 +82,14 @@ export default function EditorScreen() {
     () => (file?.vaultId ? (vaultImages[file.vaultId] ?? {}) : {}),
     [vaultImages, file?.vaultId]
   );
-  // Solo NOTAS: los PDF del árbol no se editan, no se enlazan y no aparecen en el
-  // cajón para saltar de nota.
+  // El cajón para saltar de nota es solo de NOTAS (un PDF no se edita).
   const notes = useMemo(() => files.filter(isNote), [files]);
+  // El índice de enlaces, en cambio, incluye los adjuntos: `[manual](manual.pdf)` y
+  // `[[manual.pdf]]` son enlaces válidos en Obsidian. Al tocarlos, el editor decide
+  // si abre la nota o se lo pasa al visor del teléfono.
   const vaultFiles = useMemo(
-    () => notes.filter((f) => (f.vaultId ?? '') === (file?.vaultId ?? '')),
-    [notes, file?.vaultId]
+    () => files.filter((f) => (f.vaultId ?? '') === (file?.vaultId ?? '')),
+    [files, file?.vaultId]
   );
 
   // Para el cajón (saltar de nota): con varias carpetas, separadas por carpeta.
@@ -469,11 +471,20 @@ export default function EditorScreen() {
     router.replace({ pathname: '/editor/[id]', params: { id: note.id } });
   };
 
-  // Tap en un [[enlace interno]] del preview. Solo notas: el índice de enlaces ya
-  // excluye los PDF, pero no dependemos de eso para no abrir un PDF en el editor.
+  // Tap en un enlace del preview (wikilink o enlace Markdown relativo).
   const openNoteById = (noteId: string) => {
-    const target = notes.find((f) => f.id === noteId);
-    if (target) switchTo(target);
+    const target = files.find((f) => f.id === noteId);
+    if (!target) return;
+    if (isNote(target)) {
+      switchTo(target);
+    } else if (target.kind === 'pdf') {
+      router.push({ pathname: '/pdf/[id]', params: { id: target.id } });
+    } else if (target.uri) {
+      // Un adjunto enlazado desde la nota: lo abre el visor del teléfono.
+      openWithSystemViewer(target.uri, target.name).catch((e: any) =>
+        appAlert(`No pude abrir "${target.name}"`, String(e?.message ?? e), undefined, { variant: 'error' })
+      );
+    }
   };
 
   const handleDelete = () => {

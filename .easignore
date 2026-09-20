@@ -1,9 +1,11 @@
 # Material de referencia — no forma parte de la app compilada.
 initials/
 
-# Proyecto de build del editor WYSIWYG (su output vive en assets/webeditor.html).
+# Proyectos de build (su output vive en assets/*.html).
 webeditor/node_modules/
 webeditor/dist/
+pdfviewer/node_modules/
+pdfviewer/dist/
 
 # Artefactos locales
 dist/

@@ -33,6 +33,7 @@ mdnotes-app/
 │   ├── theme/ · types/ · utils/
 ├── assets/                icon, splash, favicon, webeditor.html (editor VIVO, generado)
 ├── webeditor/             Proyecto de build del editor WYSIWYG (Milkdown Crepe) — no se compila
+├── pdfviewer/             Proyecto de build del visor de PDF (pdf.js) — no se compila
 ├── plugins/               withCmakeVersion.js (fix rutas largas de Windows)
 ├── initials/              SOLO referencia (brand book, scaffold, assets) — no se compila
 └── app.json · eas.json · metro.config.js · tsconfig.json · babel.config.js · .npmrc
@@ -45,8 +46,11 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Vault**: abrir carpetas del teléfono (recursivo, subcarpetas) y editar los `.md`
   reales en sitio; **árbol** colapsable. (Solo almacenamiento local, no Drive.)
 - **PDF e imágenes en el árbol**: se listan junto a las notas, etiquetados con su
-  extensión (`PDF`, `PNG`), y al tocarlos los abre el visor del teléfono. También se
-  listan **todas las carpetas**, incluidas las que no tienen notas.
+  extensión (`PDF`, `PNG`). Los **PDF se ven dentro de la app** (pdf.js, offline, con
+  pinch para zoom); las imágenes las abre el visor del teléfono. También se listan
+  **todas las carpetas**, incluidas las que no tienen notas.
+- **Enlaces a otras notas**: funcionan tanto `[[wikilinks]]` como los enlaces Markdown
+  relativos de toda la vida (`[texto](OTRA.md)`), y también hacia un PDF de la carpeta.
 - **Varias carpetas a la vez**: el árbol las separa por carpeta y, al crear o importar,
   la app pregunta en cuál va (ofreciendo primero la última que usaste). Cada carpeta es
   un mundo: sus imágenes, sus adjuntos y sus `[[enlaces]]` no se mezclan con los de otra.

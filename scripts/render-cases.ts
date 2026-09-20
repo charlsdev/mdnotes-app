@@ -70,6 +70,16 @@ const withBridge = mdToHtml('x', 'light', { resolveLink });
 check('el script del preview salta a las anclas sin navegar', withBridge.includes('scrollIntoView'));
 check('y avisa a RN de los enlaces internos', withBridge.includes('open-note'));
 
+// 3b. Enlaces Markdown normales a otro archivo de la carpeta
+const hMd = render('Ver [CONVENCIONES.md](CONVENCIONES.md) y [otra](./Proyectos/Ideas.md).');
+check('un enlace Markdown a un .md abre la nota', hMd.includes('data-note="n3"'), hMd);
+check('y NO conserva href (navegar dejaría el preview en blanco)',
+  !/<a[^>]*href/.test(hMd), hMd);
+const hExt = render('[web](https://ejemplo.com) y [mail](mailto:a@b.c)');
+check('los enlaces externos conservan su href', (hExt.match(/href=/g) ?? []).length === 2, hExt);
+check('un enlace relativo a un archivo inexistente queda marcado como roto',
+  render('[x](NO-EXISTE.md)').includes('wikilink-broken'), render('[x](NO-EXISTE.md)'));
+
 // 4. EL CASO CRÍTICO: nada de esto debe convertirse en enlace
 const code = ['```python', 'arr[[0]] = x', 'ref = doc[[1]]', '```', '', 'Inline: `[[no soy enlace]]`'].join('\n');
 const h4 = render(code);
