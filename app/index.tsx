@@ -160,9 +160,17 @@ export default function LibraryScreen() {
   // del teléfono.
   const openNote = useCallback(
     (note: MdFile) => {
-      // Los PDF se ven DENTRO de la app (pdf.js); el resto lo abre el teléfono.
+      // PDF, imágenes y texto se ven DENTRO de la app; lo demás lo abre el teléfono.
       if (note.kind === 'pdf') {
         router.push({ pathname: '/pdf/[id]', params: { id: note.id } });
+        return;
+      }
+      if (note.kind === 'image') {
+        router.push({ pathname: '/image/[id]', params: { id: note.id } });
+        return;
+      }
+      if (note.kind === 'text') {
+        router.push({ pathname: '/file/[id]', params: { id: note.id } });
         return;
       }
       if (!isNote(note)) {
@@ -435,6 +443,7 @@ export default function LibraryScreen() {
           notes={filtered}
           groups={treeGroups}
           folders={treeFolders}
+          expandAll={isFiltering}
           onSelect={openNote}
           onLongPressFile={confirmDelete}
           header={heroHeader}

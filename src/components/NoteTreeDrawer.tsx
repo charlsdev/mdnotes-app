@@ -18,6 +18,7 @@ export function NoteTreeDrawer({
   topInset = 0,
   bottomInset = 0,
   groups,
+  folders,
 }: {
   visible: boolean;
   notes: MdFile[];
@@ -28,6 +29,8 @@ export function NoteTreeDrawer({
   bottomInset?: number;
   // Carpetas abiertas: con más de una, el árbol del cajón también las separa.
   groups?: TreeGroup[];
+  // Todas las carpetas (las vacías también), igual que el árbol de la biblioteca.
+  folders?: string[];
 }) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
@@ -69,7 +72,9 @@ export function NoteTreeDrawer({
           <NoteTree
             notes={filtered}
             groups={groups}
+            folders={query.trim() ? undefined : folders}
             currentId={currentId}
+            expandAll={query.trim().length > 0}
             onSelect={(n) => {
               onSelect(n);
               onClose();

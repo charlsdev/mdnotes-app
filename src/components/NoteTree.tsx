@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, FlatList } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing } from '@/theme';
 import { MdFile, fileBadge } from '@/types';
-import { buildTreeRows, type TreeGroup } from '@/lib/tree';
+import { buildTreeRows, pathToNote, type TreeGroup } from '@/lib/tree';
 
 function Chevron({ open, color }: { open: boolean; color: string }) {
   return (
@@ -24,6 +24,7 @@ export function NoteTree({
   footer,
   groups,
   folders,
+  expandAll,
 }: {
   notes: MdFile[];
   onSelect: (note: MdFile) => void;
@@ -35,17 +36,33 @@ export function NoteTree({
   groups?: TreeGroup[];
   // Todas las carpetas del vault (para mostrar también las que no tienen notas).
   folders?: string[];
+  // Al filtrar hay que abrir todo: si no, los resultados quedan escondidos.
+  expandAll?: boolean;
 }) {
   const theme = useTheme();
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const grouped = (groups?.length ?? 0) > 1;
+
+  // El árbol arranca RECOGIDO, con abierto solo el camino de la nota activa. Con
+  // carpetas de cien archivos, abrirlo todo es un muro.
+  const current = notes.find((n) => n.id === currentId);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(pathToNote(current, grouped)));
+
+  // Al saltar de nota, revela la nueva sin cerrar lo que el usuario haya abierto.
+  // (Patrón "ajustar estado durante el render": no necesita un efecto.)
+  const [revealed, setRevealed] = useState(currentId);
+  if (currentId !== revealed) {
+    setRevealed(currentId);
+    const keys = pathToNote(current, grouped);
+    if (keys.length) setExpanded((prev) => new Set([...prev, ...keys]));
+  }
 
   const rows = useMemo(
-    () => buildTreeRows(notes, collapsed, groups, folders),
-    [notes, collapsed, groups, folders]
+    () => buildTreeRows(notes, expandAll ? 'all' : expanded, groups, folders),
+    [notes, expandAll, expanded, groups, folders]
   );
 
   const toggle = (path: string) =>
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -65,7 +82,7 @@ export function NoteTree({
         // Raíz de una carpeta abierta: se distingue de una subcarpeta normal
         // (acento + mayúsculas), si no todo parece el mismo nivel.
         if (item.kind === 'vault') {
-          const open = !collapsed.has(item.path);
+          const open = expandAll || expanded.has(item.path);
           return (
             <Pressable
               onPress={() => toggle(item.path)}
@@ -84,7 +101,7 @@ export function NoteTree({
           );
         }
         if (item.kind === 'folder') {
-          const open = !collapsed.has(item.path);
+          const open = expandAll || expanded.has(item.path);
           return (
             <Pressable
               onPress={() => toggle(item.path)}

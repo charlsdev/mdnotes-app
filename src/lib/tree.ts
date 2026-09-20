@@ -29,12 +29,18 @@ function countFiles(node: Node): number {
   return n;
 }
 
-// Filas de un conjunto de notas. `prefix` separa los estados de colapso entre
-// carpetas abiertas: dos vaults pueden tener un `README` cada uno y colapsar uno
-// no debe colapsar el otro.
+// Qué carpetas están ABIERTAS. `'all'` = todas (se usa al filtrar: si no, los
+// resultados quedarían escondidos dentro de carpetas cerradas).
+export type Expanded = Set<string> | 'all';
+
+const isOpen = (expanded: Expanded, key: string) => expanded === 'all' || expanded.has(key);
+
+// Filas de un conjunto de notas. `prefix` separa el estado de apertura entre
+// carpetas abiertas: dos vaults pueden tener un `README` cada uno y abrir uno
+// no debe abrir el otro.
 function rowsFor(
   notes: MdFile[],
-  collapsed: Set<string>,
+  expanded: Expanded,
   baseDepth: number,
   prefix: string,
   folders: string[] = []
@@ -67,7 +73,7 @@ function rowsFor(
       const childPath = path ? `${path}/${fn}` : fn;
       const key = prefix ? `${prefix}/${childPath}` : childPath;
       rows.push({ kind: 'folder', key: `d:${key}`, depth, name: fn, path: key, count: countFiles(child) });
-      if (!collapsed.has(key)) walk(child, depth + 1, childPath);
+      if (isOpen(expanded, key)) walk(child, depth + 1, childPath);
     }
     const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
     for (const f of files) {
@@ -83,11 +89,11 @@ function rowsFor(
 // grupo; con uno solo, el árbol es idéntico al de siempre.
 export function buildTreeRows(
   notes: MdFile[],
-  collapsed: Set<string>,
+  expanded: Expanded,
   groups: TreeGroup[] = [],
   folders: string[] = []
 ): TreeRow[] {
-  if (groups.length < 2) return rowsFor(notes, collapsed, 0, '', folders);
+  if (groups.length < 2) return rowsFor(notes, expanded, 0, '', folders);
 
   const rows: TreeRow[] = [];
   for (const group of groups) {
@@ -96,7 +102,23 @@ export function buildTreeRows(
     if (!mine.length && !groupFolders.length) continue;
     const path = `vault:${group.id}`;
     rows.push({ kind: 'vault', key: `v:${group.id}`, depth: 0, name: group.name, path, count: mine.length });
-    if (!collapsed.has(path)) rows.push(...rowsFor(mine, collapsed, 1, group.id, groupFolders));
+    if (isOpen(expanded, path)) rows.push(...rowsFor(mine, expanded, 1, group.id, groupFolders));
   }
   return rows;
+}
+
+// Carpetas que hay que abrir para que una nota quede a la vista: su carpeta abierta
+// (si el árbol está agrupado) y cada nivel del camino. Es lo que hace que al entrar
+// al cajón veas dónde estás parado, con todo lo demás recogido.
+export function pathToNote(note: MdFile | undefined, grouped: boolean): string[] {
+  if (!note) return [];
+  const vaultId = note.vaultId ?? '';
+  const keys = grouped ? [`vault:${vaultId}`] : [];
+  const prefix = grouped ? vaultId : '';
+  let acc = '';
+  for (const part of (note.folder ?? '').split('/').filter(Boolean)) {
+    acc = acc ? `${acc}/${part}` : part;
+    keys.push(prefix ? `${prefix}/${acc}` : acc);
+  }
+  return keys;
 }

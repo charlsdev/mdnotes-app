@@ -23,6 +23,11 @@ const LAST_VAULT_KEY = 'mdnotes:last-vault'; // dónde se creó la última nota
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 const PDF_RE = /\.pdf$/i;
+// Texto que se LEE pero no se edita: scripts, configuración, datos. Se muestran con
+// resaltado de sintaxis en su propia pantalla (ver `app/file/[id].tsx`).
+const TEXT_RE = /\.(sh|bash|zsh|ps1|bat|py|js|mjs|cjs|ts|tsx|jsx|json|ya?ml|toml|ini|conf|cfg|env|sql|css|scss|html?|xml|csv|log|gitignore|dockerfile|makefile)$/i;
+// Archivos sin extensión que igual son texto conocido.
+const TEXT_NAMES = new Set(['dockerfile', 'makefile', 'procfile', 'license', 'readme']);
 const SAF = FileSystem.StorageAccessFramework;
 
 const MIME: Record<string, string> = {
@@ -193,6 +198,20 @@ export async function listVault(rootUri: string): Promise<VaultScan> {
           content: '',
           createdAt: pdfMtime,
           updatedAt: pdfMtime,
+          folder: rel,
+        });
+      } else if (TEXT_RE.test(name) || TEXT_NAMES.has(name.toLowerCase())) {
+        const txtMtime = fileModifiedAt(uri);
+        out.push({
+          id: vaultIdForUri(uri),
+          kind: 'text',
+          uri,
+          dirUri,
+          vaultId,
+          name,
+          content: '', // se lee al abrirlo: no cargamos scripts en memoria al escanear
+          createdAt: txtMtime,
+          updatedAt: txtMtime,
           folder: rel,
         });
       } else if (IMG_RE.test(name)) {

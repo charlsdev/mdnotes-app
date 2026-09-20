@@ -2,7 +2,7 @@
 // abre con el visor del teléfono. Ausente = 'note' (todo lo anterior a listar
 // adjuntos). El árbol los distingue con la EXTENSIÓN como etiqueta (PDF, PNG, JPG):
 // más honesto que un ícono genérico, y se generaliza a cualquier tipo nuevo.
-export type FileKind = 'note' | 'pdf' | 'image';
+export type FileKind = 'note' | 'pdf' | 'image' | 'text';
 
 export function isNote(f: MdFile): boolean {
   return (f.kind ?? 'note') === 'note';

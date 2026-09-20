@@ -13,7 +13,7 @@ import {
   sanitizeFolderPath,
   folderSuggestions,
 } from '@/lib/paths';
-import { buildTreeRows } from '@/lib/tree';
+import { buildTreeRows, pathToNote } from '@/lib/tree';
 import { isNote, fileBadge, type MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
@@ -277,12 +277,12 @@ const groups = [
 ];
 
 // 20. Una sola carpeta: el árbol no cambia (sin filas de vault)
-const single = buildTreeRows(multi.filter((n) => n.vaultId === 'v1'), new Set());
+const single = buildTreeRows(multi.filter((n) => n.vaultId === 'v1'), 'all');
 check('con una sola carpeta no aparecen raíces de vault', !single.some((r) => r.kind === 'vault'),
   JSON.stringify(single.map((r) => r.kind)));
 
 // 21. Varias carpetas: una raíz por carpeta, con sus notas debajo
-const rows = buildTreeRows(multi, new Set(), groups);
+const rows = buildTreeRows(multi, 'all', groups);
 const vaultRows = rows.filter((r) => r.kind === 'vault');
 check('una raíz por carpeta (incluidas las internas)', vaultRows.length === 3,
   JSON.stringify(vaultRows.map((r) => r.name)));
@@ -292,13 +292,18 @@ check('cada raíz cuenta solo sus notas', vaultRows.every((r) => r.kind === 'vau
 check('las notas quedan indentadas bajo su carpeta',
   rows.filter((r) => r.kind === 'file').every((r) => r.depth >= 1));
 
-// 22. Colapsar una carpeta NO afecta a la otra (el bug clásico: mismo nombre de
-// subcarpeta en dos vaults compartiendo estado de colapso)
-const collapsedV1 = buildTreeRows(multi, new Set(['vault:v1']), groups);
-check('colapsar una carpeta oculta solo sus notas',
-  !collapsedV1.some((r) => r.kind === 'file' && r.note.vaultId === 'v1') &&
-    collapsedV1.some((r) => r.kind === 'file' && r.note.vaultId === 'v2'),
-  JSON.stringify(collapsedV1.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
+// 22. El árbol arranca RECOGIDO y abrir una carpeta NO afecta a la otra (el bug
+// clásico: mismo nombre de subcarpeta en dos vaults compartiendo estado)
+const cerrado = buildTreeRows(multi, new Set(), groups);
+check('sin nada abierto, solo se ven las raíces',
+  cerrado.every((r) => r.kind === 'vault'),
+  JSON.stringify(cerrado.map((r) => r.kind)));
+
+const soloV2 = buildTreeRows(multi, new Set(['vault:v2']), groups);
+check('abrir una carpeta muestra solo sus notas',
+  soloV2.some((r) => r.kind === 'file' && r.note.vaultId === 'v2') &&
+    !soloV2.some((r) => r.kind === 'file' && r.note.vaultId === 'v1'),
+  JSON.stringify(soloV2.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
 
 const folderRows = rows.filter((r) => r.kind === 'folder');
 check('dos carpetas con un README cada una son filas distintas',
@@ -306,10 +311,24 @@ check('dos carpetas con un README cada una son filas distintas',
     folderRows[0].path !== folderRows[1].path,
   JSON.stringify(folderRows.map((r) => r.kind === 'folder' && r.path)));
 
-const collapsedReadmeV1 = buildTreeRows(multi, new Set([folderRows[0].kind === 'folder' ? folderRows[0].path : '']), groups);
-check('colapsar el README de una carpeta no colapsa el de la otra',
-  collapsedReadmeV1.filter((r) => r.kind === 'file' && r.note.folder === 'README').length === 1,
-  JSON.stringify(collapsedReadmeV1.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
+// Abrir el README de UNA carpeta no abre el de la otra.
+const readmeV1 = folderRows[0].kind === 'folder' ? folderRows[0].path : '';
+const soloReadmeV1 = buildTreeRows(multi, new Set(['vault:v1', 'vault:v2', readmeV1]), groups);
+check('abrir el README de una carpeta no abre el de la otra',
+  soloReadmeV1.filter((r) => r.kind === 'file' && r.note.folder === 'README').length === 1,
+  JSON.stringify(soloReadmeV1.filter((r) => r.kind === 'file').map((r) => r.kind === 'file' && r.note.id)));
+
+// 22b. El camino a la nota activa es lo único que se abre de entrada
+check('el camino a la nota activa incluye su vault y sus carpetas',
+  pathToNote(vNote('x', 'Sub', 'v1', 'a/b'), true).join(',') === 'vault:v1,v1/a,v1/a/b',
+  pathToNote(vNote('x', 'Sub', 'v1', 'a/b'), true).join(','));
+check('sin agrupar, solo las carpetas',
+  pathToNote(vNote('x', 'Sub', 'v1', 'a/b'), false).join(',') === 'a,a/b');
+check('una nota en la raíz no necesita abrir nada', pathToNote(vNote('x', 'Raíz', 'v1'), false).length === 0);
+check('con el camino abierto, la nota activa se ve',
+  buildTreeRows(multi, new Set(pathToNote(multi[1], true)), groups)
+    .some((r) => r.kind === 'file' && r.note.id === 'a2'),
+  JSON.stringify(buildTreeRows(multi, new Set(pathToNote(multi[1], true)), groups).map((r) => r.name)));
 
 // 23. Una carpeta sin notas (o filtrada) no deja una raíz vacía
 const onlyV2 = buildTreeRows(multi.filter((n) => n.vaultId === 'v2'), new Set(), groups);
@@ -322,7 +341,7 @@ const pdf = (id: string, name: string, vaultId: string, folder = ''): MdFile => 
   id, kind: 'pdf', name, content: '', createdAt: 0, updatedAt: 0, folder, vaultId, uri: `content://${id}`,
 });
 const withPdfs = [vNote('n1', 'Nota', 'v1'), pdf('p1', 'manual.pdf', 'v1'), pdf('p2', 'guia.pdf', 'v1', 'Docs')];
-const pdfRows = buildTreeRows(withPdfs, new Set());
+const pdfRows = buildTreeRows(withPdfs, 'all');
 check('los PDF aparecen como filas del árbol', pdfRows.filter((r) => r.kind === 'file').length === 3,
   JSON.stringify(pdfRows.map((r) => (r.kind === 'file' ? r.name : r.name))));
 check('un PDF en subcarpeta queda dentro de ella',
@@ -338,8 +357,12 @@ check('un PDF lleva PDF', fileBadge(withPdfs[1]) === 'PDF');
 check('una imagen lleva su extensión', fileBadge(img('foto.PNG')) === 'PNG', fileBadge(img('foto.PNG')));
 check('jpeg entra en la etiqueta', fileBadge(img('x.jpeg')) === 'JPEG');
 check('una extensión larga cae a ARCHIVO', fileBadge(img('x.sketchfile')) === 'ARCHIVO');
+const script: MdFile = {
+  id: 's1', kind: 'text', name: 'deploy.sh', content: '', createdAt: 0, updatedAt: 0, vaultId: 'v1', uri: 'content://s',
+};
+check('un script lleva SH y no es nota', fileBadge(script) === 'SH' && !isNote(script));
 check('las imágenes también se listan en el árbol',
-  buildTreeRows([vNote('n1', 'Nota', 'v1'), img('foto.png')], new Set()).filter((r) => r.kind === 'file').length === 2);
+  buildTreeRows([vNote('n1', 'Nota', 'v1'), img('foto.png')], 'all').filter((r) => r.kind === 'file').length === 2);
 check('una nota vieja sin `kind` sigue siendo nota',
   isNote({ id: 'x', name: 'Vieja', content: '', createdAt: 0, updatedAt: 0 }));
 check('los PDF no entran al índice de enlaces',
@@ -348,7 +371,7 @@ check('los PDF no entran al índice de enlaces',
 // 23c. Carpetas sin notas: el árbol las muestra igual (como Obsidian)
 const soloNotaRaiz = [vNote('n1', 'Nota', 'v1')];
 const todasLasCarpetas = ['bash', 'docs', 'img', 'docs/2026'];
-const conVacias = buildTreeRows(soloNotaRaiz, new Set(), [], todasLasCarpetas);
+const conVacias = buildTreeRows(soloNotaRaiz, 'all', [], todasLasCarpetas);
 // Ojo: la lista es plana, así que la anidada ('2026') sale entre 'docs' e 'img';
 // para el orden alfabético solo cuentan las de primer nivel.
 check('las carpetas sin notas aparecen en el árbol',
@@ -360,9 +383,9 @@ check('las anidadas quedan dentro de su padre',
   conVacias.some((r) => r.kind === 'folder' && r.name === '2026' && r.depth === 1),
   JSON.stringify(conVacias.filter((r) => r.kind === 'folder').map((r) => [r.name, r.depth])));
 check('sin lista de carpetas, el árbol se comporta como antes',
-  buildTreeRows(soloNotaRaiz, new Set()).filter((r) => r.kind === 'folder').length === 0);
-check('colapsar una carpeta vacía oculta sus hijas',
-  buildTreeRows(soloNotaRaiz, new Set(['docs']), [], todasLasCarpetas)
+  buildTreeRows(soloNotaRaiz, 'all').filter((r) => r.kind === 'folder').length === 0);
+check('una carpeta cerrada oculta sus hijas',
+  buildTreeRows(soloNotaRaiz, new Set(['bash', 'img']), [], todasLasCarpetas)
     .filter((r) => r.kind === 'folder').length === 3);
 
 // Con varias carpetas abiertas, cada grupo trae las suyas
@@ -370,7 +393,7 @@ const gruposConCarpetas = [
   { id: 'v1', name: 'Trabajo', folders: ['img'] },
   { id: 'v2', name: 'Personal', folders: ['fotos'] },
 ];
-const rowsGrupos = buildTreeRows(multi.filter((n) => n.vaultId !== ''), new Set(), gruposConCarpetas);
+const rowsGrupos = buildTreeRows(multi.filter((n) => n.vaultId !== ''), 'all', gruposConCarpetas);
 check('cada carpeta abierta muestra SUS carpetas vacías',
   rowsGrupos.filter((r) => r.kind === 'folder' && (r.name === 'img' || r.name === 'fotos')).length === 2,
   JSON.stringify(rowsGrupos.filter((r) => r.kind === 'folder').map((r) => r.name)));

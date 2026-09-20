@@ -45,10 +45,12 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 
 - **Vault**: abrir carpetas del teléfono (recursivo, subcarpetas) y editar los `.md`
   reales en sitio; **árbol** colapsable. (Solo almacenamiento local, no Drive.)
-- **PDF e imágenes en el árbol**: se listan junto a las notas, etiquetados con su
-  extensión (`PDF`, `PNG`). Los **PDF se ven dentro de la app** (pdf.js, offline, con
-  pinch para zoom); las imágenes las abre el visor del teléfono. También se listan
-  **todas las carpetas**, incluidas las que no tienen notas.
+- **Todo el directorio en el árbol**, no solo los `.md`: PDF, imágenes y scripts se
+  listan junto a las notas con su extensión como etiqueta (`PDF`, `PNG`, `SH`), y
+  también aparecen las carpetas vacías. El árbol arranca **recogido**, abierto solo en
+  la nota que estés viendo.
+- **Visores propios, sin salir de la app**: PDF (pdf.js, offline), imágenes (con pinch
+  y doble toque para acercar) y archivos de texto o scripts (con resaltado de sintaxis).
 - **Enlaces a otras notas**: funcionan tanto `[[wikilinks]]` como los enlaces Markdown
   relativos de toda la vida (`[texto](OTRA.md)`), y también hacia un PDF de la carpeta.
 - **Varias carpetas a la vez**: el árbol las separa por carpeta y, al crear o importar,

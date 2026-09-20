@@ -52,7 +52,7 @@ export default function EditorScreen() {
   const readingScale = useSettings((s) => s.readingScale);
   const attachmentMode = useSettings((s) => s.attachmentMode);
   const attachmentFolderPref = useSettings((s) => s.attachmentFolder);
-  const { files, upsert, remove, vaultImages, vaults, addVaultImage, readContent, loaded, load } =
+  const { files, upsert, remove, vaultImages, vaults, vaultFolders, addVaultImage, readContent, loaded, load } =
     useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
@@ -92,13 +92,20 @@ export default function EditorScreen() {
     [files, file?.vaultId]
   );
 
-  // Para el cajón (saltar de nota): con varias carpetas, separadas por carpeta.
+  // Para el cajón: el MISMO directorio que la biblioteca (carpetas vacías incluidas),
+  // no solo los .md — si no, el cajón parece mostrar otra carpeta.
   const treeGroups = useMemo(() => {
     if (vaults.length < 2) return undefined;
-    const groups = vaults.map((v) => ({ id: v.id, name: v.name }));
-    if (notes.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
+    const groups: { id: string; name: string; folders?: string[] }[] = vaults.map((v) => ({
+      id: v.id,
+      name: v.name,
+      folders: vaultFolders[v.id],
+    }));
+    if (files.some((f) => !f.vaultId)) groups.push({ id: '', name: 'En el dispositivo' });
     return groups;
-  }, [vaults, notes]);
+  }, [vaults, files, vaultFolders]);
+
+  const drawerFolders = vaults.length === 1 ? vaultFolders[vaults[0].id] : undefined;
 
   // En VIEW, resuelve las imágenes locales del vault (./img/x.png) a data URIs
   // antes de pasar el contenido al preview (el WebView no lee content:// sueltos).
@@ -471,20 +478,27 @@ export default function EditorScreen() {
     router.replace({ pathname: '/editor/[id]', params: { id: note.id } });
   };
 
-  // Tap en un enlace del preview (wikilink o enlace Markdown relativo).
-  const openNoteById = (noteId: string) => {
-    const target = files.find((f) => f.id === noteId);
-    if (!target) return;
+  // Abrir algo del árbol o de un enlace: una nota salta en el editor, un adjunto
+  // va a su visor. Misma decisión en el cajón y en los [[enlaces]] del preview.
+  const openFile = (target: MdFile) => {
     if (isNote(target)) {
       switchTo(target);
     } else if (target.kind === 'pdf') {
       router.push({ pathname: '/pdf/[id]', params: { id: target.id } });
+    } else if (target.kind === 'image') {
+      router.push({ pathname: '/image/[id]', params: { id: target.id } });
+    } else if (target.kind === 'text') {
+      router.push({ pathname: '/file/[id]', params: { id: target.id } });
     } else if (target.uri) {
-      // Un adjunto enlazado desde la nota: lo abre el visor del teléfono.
       openWithSystemViewer(target.uri, target.name).catch((e: any) =>
         appAlert(`No pude abrir "${target.name}"`, String(e?.message ?? e), undefined, { variant: 'error' })
       );
     }
+  };
+
+  const openNoteById = (noteId: string) => {
+    const target = files.find((f) => f.id === noteId);
+    if (target) openFile(target);
   };
 
   const handleDelete = () => {
@@ -535,10 +549,11 @@ export default function EditorScreen() {
 
       <NoteTreeDrawer
         visible={drawerOpen}
-        notes={notes}
+        notes={files}
         groups={treeGroups}
+        folders={drawerFolders}
         currentId={id}
-        onSelect={switchTo}
+        onSelect={openFile}
         onClose={() => setDrawerOpen(false)}
         topInset={insets.top}
         bottomInset={insets.bottom}

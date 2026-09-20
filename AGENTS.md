@@ -136,6 +136,15 @@ sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
   `VaultScan.folders` las junta durante el escaneo (que ya las recorría) y el árbol las
   muestra aunque estén vacías — como hace Obsidian. Con un filtro activo NO se pasan:
   filtrando, el árbol debe mostrar lo que coincide, no la estructura entera.
+- **El árbol arranca RECOGIDO**, con abierto solo el camino de la nota activa
+  (`pathToNote`). Con vaults de cien archivos, abrirlo todo era un muro. El estado es
+  de APERTURA (`Expanded = Set | 'all'`), no de colapso: `new Set()` = todo cerrado.
+  **Al filtrar se pasa `'all'`** — si no, los resultados quedarían escondidos dentro
+  de carpetas cerradas.
+- El **cajón del editor muestra el MISMO directorio** que la biblioteca (adjuntos y
+  carpetas vacías incluidos): mostrar solo los `.md` ahí parecía otra carpeta. El tap
+  se enruta por tipo (`openFile`): nota → salta en el editor; PDF/imagen/texto → su
+  visor; el resto → el visor del teléfono.
 - El **árbol** antepone una raíz por carpeta solo cuando hay más de una
   (`buildTreeRows(notes, collapsed, groups)`); con una sola se ve como siempre. Los
   estados de colapso van prefijados por carpeta: dos vaults con un `README` cada uno
@@ -293,6 +302,21 @@ Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikil
   (`shortestLinkLabel`), igual que Obsidian.
 - VIVO muestra los enlaces como texto plano (Crepe no los conoce); lo importante es que
   **no los corrompa** al reserializar — de eso se encarga `unescapeMarkers`.
+
+## Visores de adjuntos (pantallas aparte, ninguno edita)
+
+- **Imagen** (`app/image/[id].tsx`): `<Animated.Image>` con pinch + arrastre + doble
+  toque, usando gesture-handler/reanimated (ya estaban). Carga el `content://` directo
+  (RN lo soporta en Android); no copia nada. Al volver a 1x se recentra sola, si no la
+  imagen queda "perdida" fuera de la vista.
+- **Texto/scripts** (`app/file/[id].tsx`): `.sh`, `.json`, `.yml`, `.sql`… se muestran
+  envueltos en un bloque de código y renderizados con el MISMO `MarkdownPreview`. Así
+  heredan resaltado, tema y tamaño de lectura sin código nuevo. La valla de backticks
+  se calcula más larga que cualquier secuencia del archivo (si no, un `.md` de ejemplo
+  dentro del script cortaría el bloque).
+- El escaneo NO lee su contenido (`content: ''`): se lee al abrir. Un `.sh` o un `.json`
+  gigante no tiene por qué estar en memoria desde el arranque.
+- `.txt`/`.mdx` siguen siendo NOTAS editables (están en `MD_RE`), no texto de solo lectura.
 
 ## Visor de PDF (pdf.js) — `pdfviewer/` → `assets/pdfviewer.html`
 
