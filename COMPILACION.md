@@ -4,8 +4,9 @@
 
 - **Node 20+** (aquí gestionado con **fnm**; no está en el PATH de shells no interactivos).
 - **pnpm** (el repo usa `.npmrc` con `node-linker=hoisted` — obligatorio).
-- Para el APK Android: **Android Studio** (JDK/JBR + SDK + platform-tools/adb) y
-  **CMake 4.1.2** (ver más abajo, es clave en Windows).
+- Para el APK Android: **Android Studio** (SDK + platform-tools/adb), un **JDK 17–21**
+  (ver abajo: el JBR que trae Android Studio ya es demasiado nuevo) y **CMake 4.1.2**
+  (es clave en Windows).
 
 ```bash
 pnpm install
@@ -43,6 +44,34 @@ pwsh -File .\build-and-install.ps1 -InstallOnly
 El script autodetecta `adb`, `JAVA_HOME`/JBR de Android Studio y Node vía fnm; para el
 daemon de Gradle antes de regenerar (evita `EBUSY` en Windows); y compila un APK
 **release** (JS embebido con Hermes → corre en el cel sin laptop).
+
+## JDK: Gradle 8.14 NO soporta Java 25+
+
+Android Studio actualizó su JBR a **Java 25** (y los JDK sueltos de Oracle ya van por 26).
+El wrapper del proyecto es **Gradle 8.14.3**, que solo llega hasta Java 24, y cuando se topa
+con una versión que no conoce falla al resolver los plugins con un mensaje que es
+**solo el número de versión**:
+
+```
+* Where: Settings file 'android\settings.gradle' line: 21
+* What went wrong: Error resolving plugin [id: 'com.facebook.react.settings']
+> 25.0.2
+```
+
+No es un problema de React Native ni del código: es el JDK. **Solución**: compilar con un
+JDK **17–21** (17 es el canónico para RN 0.81 / AGP 8).
+
+`build-and-install.ps1` ya lo resuelve solo: busca el primer JDK entre 17 y 24 —
+`JAVA_HOME`, los toolchains que Gradle bajó en `~/.gradle/jdks`, los JDK instalados y, al
+final, el JBR — y avisa si tuvo que ignorar `JAVA_HOME`. Si no encuentra ninguno, instala
+Temurin 17 o 21. Para forzar uno a mano en una sesión:
+
+```powershell
+$env:JAVA_HOME = "$env:USERPROFILE\.gradle\jdks\eclipse_adoptium-17-amd64-windows.2"
+```
+
+> Ojo: NO subas el wrapper a Gradle 9 para "arreglar" esto sin revisar AGP/RN — el combo
+> soportado por Expo SDK 54 es Gradle 8.x + JDK 17.
 
 ## CMake 4.1.2 — el fix de "Filename longer than 260 characters" (Windows)
 

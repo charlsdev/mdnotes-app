@@ -42,18 +42,57 @@ $env:ANDROID_HOME = Split-Path -Parent (Split-Path -Parent $adb)
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 Write-Host "› ANDROID_HOME = $env:ANDROID_HOME" -ForegroundColor DarkGray
 
-# --- JAVA_HOME: respeta uno válido; si no, busca el JBR de Android Studio. ---
+# --- JAVA_HOME: un JDK que Gradle soporte (17–24). ---
+# El JBR que trae Android Studio ya viene con Java 25/26, y Gradle 8.14 no lo conoce:
+# la build muere al resolver los plugins con un error críptico que es solo la versión
+# ("Error resolving plugin [id: 'com.facebook.react.settings'] > 25.0.2"). Por eso NO
+# alcanza con "que exista javac": hay que mirar la versión y elegir una soportada.
+$JDK_MIN = 17
+$JDK_MAX = 24
+
 function Is-Jdk([string]$jdkHome) { return ($jdkHome -and (Test-Path (Join-Path $jdkHome 'bin\javac.exe'))) }
-if (-not (Is-Jdk $env:JAVA_HOME)) {
-  $jbr = First-Existing @(
-    "$env:LOCALAPPDATA\Programs\Android Studio\jbr",
-    'C:\Program Files\Android\Android Studio\jbr',
-    'C:\Program Files\Jetbrains\Android Studio\jbr'
-  )
-  if (-not $jbr) { throw 'No encontré un JDK (JBR de Android Studio). Instala Android Studio o setea JAVA_HOME a un JDK 17+.' }
-  $env:JAVA_HOME = $jbr
+
+# Major del JDK leyendo su archivo `release` (8 para los viejos `1.8.0_x`); 0 si no se sabe.
+function Get-JdkMajor([string]$jdkHome) {
+  $rel = Join-Path $jdkHome 'release'
+  if (-not (Test-Path $rel)) { return 0 }
+  $m = Select-String -Path $rel -Pattern '^JAVA_VERSION="?([0-9]+)(?:\.([0-9]+))?' -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if (-not $m) { return 0 }
+  $major = [int]$m.Matches[0].Groups[1].Value
+  if ($major -eq 1 -and $m.Matches[0].Groups[2].Success) { $major = [int]$m.Matches[0].Groups[2].Value }
+  return $major
 }
-Write-Host "› JAVA_HOME = $env:JAVA_HOME" -ForegroundColor DarkGray
+
+# Orden de preferencia: JAVA_HOME, toolchains que Gradle ya bajó, JDKs instalados y
+# por último el JBR de Android Studio (el que suele estar demasiado nuevo).
+$jdkCandidates = @($env:JAVA_HOME)
+$jdkCandidates += Get-ChildItem "$env:USERPROFILE\.gradle\jdks" -Directory -ErrorAction SilentlyContinue |
+  ForEach-Object { $_.FullName }
+$jdkCandidates += Get-ChildItem 'C:\Program Files\Java', 'C:\Program Files\Eclipse Adoptium',
+  'C:\Program Files\Microsoft', 'C:\Program Files\Amazon Corretto', 'C:\Program Files\Zulu' `
+  -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+$jdkCandidates += @(
+  "$env:LOCALAPPDATA\Programs\Android Studio\jbr",
+  'C:\Program Files\Android\Android Studio\jbr',
+  'C:\Program Files\Jetbrains\Android Studio\jbr'
+)
+
+$jdk = $null
+$jdkMajor = 0
+foreach ($c in $jdkCandidates) {
+  if (-not (Is-Jdk $c)) { continue }
+  $major = Get-JdkMajor $c
+  if ($major -ge $JDK_MIN -and $major -le $JDK_MAX) { $jdk = $c; $jdkMajor = $major; break }
+}
+if (-not $jdk) {
+  throw "No encontré un JDK entre $JDK_MIN y $JDK_MAX (Gradle 8.14 no soporta Java 25+). Instala Temurin 17 o 21 y setea JAVA_HOME."
+}
+if ($env:JAVA_HOME -and $env:JAVA_HOME -ne $jdk) {
+  Write-Host "⚠ JAVA_HOME ($env:JAVA_HOME) no sirve para Gradle; uso otro JDK." -ForegroundColor Yellow
+}
+$env:JAVA_HOME = $jdk
+Write-Host "› JAVA_HOME = $env:JAVA_HOME (Java $jdkMajor)" -ForegroundColor DarkGray
 
 if (-not $InstallOnly) {
   # App managed: genera android/ desde app.json la primera vez (o si -Prebuild).
