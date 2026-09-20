@@ -1,6 +1,8 @@
-// Prueba de la regla inline de wikilinks contra el módulo REAL (no una copia).
+// Aserciones contra los módulos REALES (no copias): render de markdown, enlaces
+// internos y rutas de adjuntos.
 import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
+import { relativeTo, resolveRel, encodeRef, attachmentFolderFromConfig } from '@/lib/paths';
 import type { MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
@@ -91,6 +93,53 @@ const h11 = render('> [!TIP]\n> Ojo\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n$x
 check('alertas, tablas, mates y ==marcado== siguen funcionando',
   h11.includes('gh-alert-tip') && h11.includes('<table>') && h11.includes('katex') && h11.includes('<mark>'),
   h11.slice(0, 200));
+
+// --- Adjuntos: dónde va la imagen y cómo se la enlaza desde la nota ---
+
+// 12. Ruta del adjunto vista desde la nota
+check('nota en la raíz → ruta directa', relativeTo('', 'adjuntos/x.jpg') === 'adjuntos/x.jpg');
+check('nota en subcarpeta → sube con ..', relativeTo('README', 'adjuntos/x.jpg') === '../adjuntos/x.jpg',
+  relativeTo('README', 'adjuntos/x.jpg'));
+check('nota anidada dos niveles → ../../', relativeTo('a/b', 'adjuntos/x.jpg') === '../../adjuntos/x.jpg',
+  relativeTo('a/b', 'adjuntos/x.jpg'));
+check('adjunto junto a la nota → sin ..', relativeTo('README', 'README/x.jpg') === 'x.jpg',
+  relativeTo('README', 'README/x.jpg'));
+check('adjunto en subcarpeta de la nota', relativeTo('README', 'README/img/x.jpg') === 'img/x.jpg',
+  relativeTo('README', 'README/img/x.jpg'));
+check('adjunto en la raíz desde nota anidada', relativeTo('a/b', 'x.jpg') === '../../x.jpg',
+  relativeTo('a/b', 'x.jpg'));
+
+// 13. Ida y vuelta: lo que se escribe en la nota tiene que volver a la misma ruta
+for (const [noteFolder, target] of [
+  ['', 'adjuntos/x.jpg'],
+  ['README', 'adjuntos/x.jpg'],
+  ['a/b', 'adjuntos/x.jpg'],
+  ['README', 'README/x.jpg'],
+] as const) {
+  const written = relativeTo(noteFolder, target);
+  check(`round-trip '${noteFolder || "(raíz)"}' → ${written}`, resolveRel(noteFolder, written) === target,
+    `${resolveRel(noteFolder, written)} ≠ ${target}`);
+}
+
+// 14. Escape mínimo en la ruta
+check('los espacios se escapan', encodeRef('mis adjuntos/foto (1).jpg') === 'mis%20adjuntos/foto%20%281%29.jpg',
+  encodeRef('mis adjuntos/foto (1).jpg'));
+check('los acentos se dejan legibles', encodeRef('imágenes/ñandú.jpg') === 'imágenes/ñandú.jpg');
+
+// 15. attachmentFolderPath de Obsidian
+check("sin config → carpeta propia", attachmentFolderFromConfig(null, 'README') === 'adjuntos');
+check("'/' → raíz del vault", attachmentFolderFromConfig('/', 'README') === '');
+check("'assets' → desde la raíz", attachmentFolderFromConfig('assets', 'README') === 'assets');
+check("'/assets' → desde la raíz", attachmentFolderFromConfig('/assets', 'README') === 'assets');
+check("'./' → junto a la nota", attachmentFolderFromConfig('./', 'README') === 'README');
+check("'./img' → subcarpeta de la nota", attachmentFolderFromConfig('./img', 'README') === 'README/img',
+  attachmentFolderFromConfig('./img', 'README'));
+check("'./img' con nota en la raíz", attachmentFolderFromConfig('./img', '') === 'img');
+
+// 16. El enlace generado tiene que renderizar como imagen (no como enlace roto)
+const written = encodeRef(relativeTo('README', 'adjuntos/imagen-20260919-214300.jpg'));
+const h16 = render(`![imagen](${written})`);
+check('el markdown generado produce un <img>', h16.includes('<img') && h16.includes(written), h16);
 
 console.log(failed === 0 ? '\nTODO OK' : `\n${failed} FALLAS`);
 process.exit(failed === 0 ? 0 : 1);

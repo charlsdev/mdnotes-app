@@ -27,8 +27,9 @@ import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
 import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
+import { resolveRel, relativeTo, encodeRef } from '@/lib/paths';
 import { WikilinkSuggestions } from '@/components/WikilinkSuggestions';
-import { readImageDataUri } from '@/storage/vault';
+import { readImageDataUri, saveVaultImage, attachmentFolderFor } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
 import { deriveName, computeTags } from '@/utils/text';
 import { splitFrontmatter, stripFrontmatter, getFrontmatterTags, setFrontmatterTags } from '@/lib/frontmatter';
@@ -49,7 +50,8 @@ export default function EditorScreen() {
   const autosave = useSettings((s) => s.autosave);
   const pdfMarginMm = useSettings((s) => s.pdfMarginMm);
   const readingScale = useSettings((s) => s.readingScale);
-  const { files, upsert, remove, vaultImages, readContent, loaded, load } = useFilesStore();
+  const { files, upsert, remove, vaultImages, vaultUri, addVaultImage, readContent, loaded, load } =
+    useFilesStore();
 
   const [file, setFile] = useState<MdFile | null>(null);
   const [content, setContent] = useState('');
@@ -363,8 +365,10 @@ export default function EditorScreen() {
     });
   };
 
-  // Inserta una imagen de la galería como data URI. Antes de embeberla la
-  // redimensiona (máx ~1400px) y comprime → el .md queda mucho más liviano.
+  // Inserta una imagen de la galería, redimensionada (máx ~1400px) y comprimida.
+  // Con carpeta abierta va como ARCHIVO del vault y la nota guarda solo la ruta:
+  // el .md se mantiene legible y portable (así lo espera Obsidian). Sin vault —o si
+  // la carpeta no acepta la escritura— cae al data URI incrustado, que siempre funciona.
   const handleImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
     if (res.canceled) return;
@@ -377,6 +381,24 @@ export default function EditorScreen() {
       base64: true,
     });
     if (!out.base64) return;
+
+    if (vaultUri && file?.uri) {
+      try {
+        const noteFolder = file.folder ?? '';
+        const folder = await attachmentFolderFor(vaultUri, noteFolder);
+        const saved = await saveVaultImage(vaultUri, folder, imageBaseName(), out.base64);
+        addVaultImage(saved.relPath, saved.uri);
+        onInsert(`\n![imagen](${encodeRef(relativeTo(noteFolder, saved.relPath))})\n`);
+        return;
+      } catch (e: any) {
+        appAlert(
+          'No pude guardar la imagen en la carpeta',
+          `${e?.message ?? e}\n\nLa dejé incrustada en la nota para no perderla.`,
+          undefined,
+          { variant: 'warn' }
+        );
+      }
+    }
     onInsert(`\n![imagen](data:image/jpeg;base64,${out.base64})\n`);
   };
 
@@ -585,16 +607,12 @@ const indicatorStyles = StyleSheet.create({
   pillText: { fontFamily: fonts.monoMedium, fontSize: 10, letterSpacing: 0.5 },
 });
 
-// Resuelve una ruta relativa (con ./ , ../ o \) contra la carpeta de la nota.
-function resolveRel(folder: string, ref: string): string {
-  const parts = [...folder.split('/'), ...ref.replace(/\\/g, '/').split('/')];
-  const stack: string[] = [];
-  for (const p of parts) {
-    if (p === '' || p === '.') continue;
-    if (p === '..') stack.pop();
-    else stack.push(p);
-  }
-  return stack.join('/');
+// Nombre del adjunto: ordenable y sin espacios (los espacios en una ruta de
+// Markdown obligan a escaparlos y rompen en algunos renderizadores).
+function imageBaseName(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `imagen-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
 const IMG_MD_RE = /!\[[^\]]*\]\(\s*([^)\s]+)/g;

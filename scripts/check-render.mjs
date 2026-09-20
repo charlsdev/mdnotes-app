@@ -1,10 +1,12 @@
-// Corre las aserciones de `wikilinks-cases.ts` contra el módulo REAL de markdown.
+// Corre las aserciones de `render-cases.ts` contra los módulos REALES (markdown,
+// wikilinks, paths).
 //
-// Por qué existe: la regla inline de wikilinks es la parte del render más fácil de
-// romper en silencio (un `[[` dentro de un bloque de código convertido en enlace no
-// se nota hasta que lo ves en el teléfono). `tsc` no prueba nada de eso.
+// Por qué existe: son las partes que se rompen en silencio. Un `[[` dentro de un
+// bloque de código convertido en enlace, o una ruta relativa mal calculada para un
+// adjunto, no se notan hasta que mirás el preview en el teléfono. `tsc` no ve nada
+// de eso.
 //
-//   node scripts/check-wikilinks.mjs
+//   node scripts/check-render.mjs
 //
 // Usa el esbuild de webeditor/ (la app no lo tiene en la raíz) solo para bundlear
 // el TS a algo que Node pueda ejecutar.
@@ -25,11 +27,11 @@ if (!fs.existsSync(esbuildEntry)) {
 const require_ = createRequire(import.meta.url);
 const esbuild = require_(esbuildEntry);
 
-const outFile = path.join(root, 'node_modules/.cache/mdnotes/wikilinks-cases.cjs');
+const outFile = path.join(root, 'node_modules/.cache/mdnotes/render-cases.cjs');
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 
 await esbuild.build({
-  entryPoints: [path.join(here, 'wikilinks-cases.ts')],
+  entryPoints: [path.join(here, 'render-cases.ts')],
   bundle: true,
   platform: 'node',
   format: 'cjs',

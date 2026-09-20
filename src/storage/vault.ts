@@ -10,6 +10,7 @@ import { File } from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MdFile } from '@/types';
 import { computeTags, elideDataUris, utf8Length } from '@/utils/text';
+import { attachmentFolderFromConfig } from '@/lib/paths';
 
 const VAULT_KEY = 'mdnotes:vault-uri';
 const MD_RE = /\.(md|markdown|txt|mdx)$/i;
@@ -263,6 +264,86 @@ export async function writeVaultFile(
 
 function sanitizeName(baseName: string): string {
   return baseName.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
+}
+
+// --- Adjuntos (imágenes como archivos del vault, no base64 en el .md) ---
+
+// Id del documento y del árbol dentro de una URI SAF, para poder calcular rutas
+// relativas al vault a partir de lo que devuelve el proveedor (que es la fuente
+// de verdad del nombre final: puede haberlo cambiado).
+function docIdOf(uri: string): string {
+  const i = uri.lastIndexOf('/document/');
+  return i < 0 ? '' : decodeURIComponent(uri.slice(i + '/document/'.length));
+}
+
+function treeIdOf(uri: string): string {
+  const i = uri.indexOf('/tree/');
+  if (i < 0) return '';
+  const rest = uri.slice(i + '/tree/'.length);
+  const end = rest.indexOf('/document/');
+  return decodeURIComponent(end < 0 ? rest : rest.slice(0, end));
+}
+
+// Ruta del archivo relativa a la raíz del vault ('adjuntos/foto.jpg').
+function relPathInVault(fileUri: string): string {
+  const doc = docIdOf(fileUri);
+  const tree = treeIdOf(fileUri);
+  if (tree && doc.startsWith(`${tree}/`)) return doc.slice(tree.length + 1);
+  return doc.split('/').pop() ?? '';
+}
+
+// Devuelve la URI de una carpeta del vault, creando los segmentos que falten.
+async function ensureFolder(rootUri: string, relPath: string): Promise<string> {
+  let dir = rootUri;
+  for (const segment of relPath.split('/').filter(Boolean)) {
+    const children = await SAF.readDirectoryAsync(dir);
+    const existing = children.find((c) => {
+      const n = fileNameFromUri(c);
+      return n.toLowerCase() === segment.toLowerCase() && !/\.[a-z0-9]{1,6}$/i.test(n);
+    });
+    dir = existing ?? (await SAF.makeDirectoryAsync(dir, segment));
+  }
+  return dir;
+}
+
+// Carpeta de adjuntos configurada en Obsidian (`.obsidian/app.json` →
+// `attachmentFolderPath`), traducida a una ruta relativa a la RAÍZ del vault.
+// Si no hay config (o no se puede leer), usa `adjuntos`. Semántica de Obsidian:
+//   '/' → raíz · 'x' → x desde la raíz · './' → junto a la nota · './x' → x junto a la nota
+export async function attachmentFolderFor(rootUri: string, noteFolder: string): Promise<string> {
+  let configured: string | null = null;
+  // (La traducción de la config a ruta vive en `paths.ts`, que es puro y testeable.)
+  try {
+    const rootChildren = await SAF.readDirectoryAsync(rootUri);
+    const dotDir = rootChildren.find((c) => fileNameFromUri(c) === '.obsidian');
+    if (dotDir) {
+      const files = await SAF.readDirectoryAsync(dotDir);
+      const appJson = files.find((c) => fileNameFromUri(c) === 'app.json');
+      if (appJson) {
+        const raw = await FileSystem.readAsStringAsync(appJson);
+        const value = JSON.parse(raw)?.attachmentFolderPath;
+        if (typeof value === 'string') configured = value.trim();
+      }
+    }
+  } catch {
+    // Sin config legible: seguimos con el default.
+  }
+
+  return attachmentFolderFromConfig(configured, noteFolder);
+}
+
+// Guarda una imagen (base64) como archivo real del vault. Devuelve su ruta
+// relativa a la raíz y su URI, para poder enlazarla y resolverla en el preview.
+export async function saveVaultImage(
+  rootUri: string,
+  folderPath: string,
+  baseName: string,
+  base64: string
+): Promise<{ relPath: string; uri: string }> {
+  const dir = folderPath ? await ensureFolder(rootUri, folderPath) : rootUri;
+  const uri = await SAF.createFileAsync(dir, `${baseName}.jpg`, 'image/jpeg');
+  await SAF.writeAsStringAsync(uri, base64, { encoding: 'base64' });
+  return { relPath: relPathInVault(uri), uri };
 }
 
 // Crea un .md nuevo dentro de la carpeta y devuelve su URI.

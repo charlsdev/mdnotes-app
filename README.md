@@ -68,7 +68,9 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
   también se derivan `#hashtags` del cuerpo. Portable (Obsidian). **Filtro por tag** en la biblioteca.
 - Saltar de una nota a otra desde el editor (cajón ☰) sin volver a la biblioteca.
 - Exportar a **PDF** (A4, **margen configurable**, sin cortar bloques entre páginas) y compartir el `.md`.
-- **Imágenes** de galería redimensionadas/comprimidas antes de insertarlas (data URI liviano).
+- **Imágenes** de galería redimensionadas y comprimidas. Con carpeta abierta se guardan como
+  **archivo de la carpeta** (`adjuntos/`, o donde diga la config de Obsidian) y la nota solo
+  lleva la ruta: el `.md` queda legible y portable. Sin carpeta, se incrustan en la nota.
 - **Ajustes** (⚙): **tema** (sistema/claro/oscuro), **tamaño** y **fuente** de lectura, autoguardado,
   margen del PDF. Búsqueda en contenido.
 

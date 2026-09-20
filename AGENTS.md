@@ -170,7 +170,26 @@ round-trip del parámetro (→ editor con spinner infinito). Por eso:
   se agregan `break-inside: avoid` (callouts, código, tablas, imágenes) y `break-after: avoid` en
   títulos para que no se corten entre páginas.
 - **Imágenes de galería** (toolbar 🖼): se **redimensionan** (máx 1400px) y comprimen con
-  **expo-image-manipulator** antes de embeberlas como **data URI JPEG** en el `.md` (mucho más liviano).
+  **expo-image-manipulator**. Con carpeta abierta se guardan como **archivo real del vault**
+  y la nota solo lleva la ruta (ver abajo); sin vault —o si la escritura falla— caen al
+  **data URI JPEG** incrustado, que siempre funciona.
+
+### Adjuntos: archivo del vault, no base64
+Incrustar la foto en el `.md` lo vuelve ilegible fuera de la app (en Obsidian de escritorio
+es un muro de base64) y engorda cada escaneo. Por eso, con vault abierto:
+- `saveVaultImage()` (`vault.ts`) escribe el JPEG en la carpeta de adjuntos y **devuelve la
+  ruta derivada de la URI que dio el proveedor**, no del nombre que pedimos: Android puede
+  cambiarlo (`foto (1).jpg`) y la nota tiene que enlazar el nombre REAL.
+- La carpeta sale de `.obsidian/app.json` → `attachmentFolderPath` si el vault es de Obsidian
+  (`/`, `x`, `./`, `./x` — ver `attachmentFolderFromConfig` en `lib/paths.ts`); si no,
+  `adjuntos/`. Los segmentos que falten se crean, reusando la carpeta si ya existe (crear a
+  ciegas daría `adjuntos (1)`).
+- Se enlaza con **Markdown estándar y ruta relativa a la nota** (`![imagen](../adjuntos/x.jpg)`),
+  no con `![[x.jpg]]`: funciona igual en Obsidian y además fuera de él. `relativeTo()` calcula
+  la ruta y `resolveRel()` la deshace — son inversas, y hay round-trips que lo prueban.
+- El adjunto nuevo se registra en `vaultImages` (`addVaultImage`) para que el preview lo
+  resuelva sin re-escanear la carpeta.
+- Las notas viejas con base64 siguen funcionando (nada las migra automáticamente).
 - **Imágenes locales del vault** (`![](./img/x.png)` o `<img src>`): el escaneo indexa las
   imágenes (`VaultScan.images`: relPath→uri) y el editor las resuelve a data URI antes del
   preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
@@ -314,9 +333,10 @@ prop (`topInset`, medido en el editor). No confíes en SafeAreaView dentro de un
 - `pnpm typecheck` (tsc --noEmit) y `npx expo export --platform android` (bundle Metro)
   son el mínimo antes de dar algo por bueno. No hay acceso a device en CI; el WebView/
   KaTeX/SAF hay que verlos en el teléfono.
-- `node scripts/check-wikilinks.mjs` ejercita el render de enlaces internos contra el
-  módulo real (resolución, backlinks, embeds, y que el código dentro de ``` ``` `` no se
-  convierta en enlace). Córrelo si tocas `markdown.ts` o `wikilinks.ts`; `tsc` no ve nada
-  de eso. Necesita el esbuild de `webeditor/`.
+- `node scripts/check-render.mjs` ejercita contra los módulos reales el render de enlaces
+  internos (resolución, backlinks, embeds, y que el código dentro de ``` ``` `` NO se
+  convierta en enlace) y las rutas de adjuntos (incluido el round-trip
+  `relativeTo` ↔ `resolveRel`). Córrelo si tocas `markdown.ts`, `wikilinks.ts` o
+  `paths.ts`; `tsc` no ve nada de eso. Necesita el esbuild de `webeditor/`.
 - Lo que NINGUNA de las tres cosas cubre y hay que probar en el teléfono: escritura SAF
   (truncado/recreación), el puente del WebView, y el editor VIVO.

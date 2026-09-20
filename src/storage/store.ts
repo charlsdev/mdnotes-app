@@ -17,6 +17,8 @@ interface FilesState {
   closeVault: () => Promise<void>;
   // Contenido COMPLETO desde el disco (el de `files` es la copia ligera).
   readContent: (file: MdFile) => Promise<string>;
+  // Registra un adjunto recién creado para que el preview lo resuelva sin re-escanear.
+  addVaultImage: (relPath: string, uri: string) => void;
   // Devuelve la nota como quedó (la URI puede cambiar si hubo que recrear el archivo).
   upsert: (file: MdFile) => Promise<MdFile>;
   remove: (id: string) => Promise<void>;
@@ -114,6 +116,10 @@ export const useFilesStore = create<FilesState>((set, get) => ({
 
   readContent: async (file) => {
     return file.uri ? Vault.readVaultFile(file.uri) : FilesAPI.readContent(file.id);
+  },
+
+  addVaultImage: (relPath, uri) => {
+    set({ vaultImages: { ...get().vaultImages, [relPath]: uri } });
   },
 
   // Persiste el .md y refleja el resultado en la lista. LANZA si la escritura
