@@ -176,6 +176,34 @@ round-trip del parámetro (→ editor con spinner infinito). Por eso:
   preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
   `readImageDataUri` lee SAF en base64). Maneja `./`, `../` y `\` de Windows.
 
+## Enlaces internos (wikilinks, estilo Obsidian)
+
+`[[nota]]`, `[[nota|alias]]`, `[[nota#sección]]` y el embed `![[archivo]]`.
+Lógica de resolución en `src/lib/wikilinks.ts`; el render, en el plugin `wikilinks` de
+`markdown.ts`.
+
+- Es una **regla inline de markdown-it**, NO un reemplazo de texto sobre el markdown: así
+  un `[[` dentro de un bloque de código (o de código inline) se queda como está. No lo
+  cambies por un `.replace()` global — rompería los ejemplos de código de las notas.
+- **Resolución** (`resolveWikilink`): ruta desde la raíz del vault → ruta relativa a la
+  carpeta de la nota → nombre suelto. Ante nombres repetidos gana la nota menos anidada,
+  con desempate alfabético, para que sea estable entre escaneos. Sin match → se pinta como
+  enlace roto (`.wikilink-broken`), nunca como `<a>`.
+- **El tap NO navega en el WebView**: el HTML lleva un listener que hace
+  `postMessage({type:'open-note', id})` y React Native abre la nota (`onOpenNote` →
+  `switchTo`, que guarda lo pendiente). Por eso el `<a>` lleva `data-note` y un `href="#"`
+  inerte. En el **PDF** no se inyecta ni el script ni los backlinks.
+- **Backlinks** ("Mencionada en"): `backlinksFor()` sobre la copia ligera del store (los
+  wikilinks son texto, así que alcanza) y se inyectan al final del HTML del preview.
+- **Embeds de imagen**: `![[foto.png]]` se resuelve contra el índice del vault. Obsidian
+  referencia los adjuntos **por nombre**, sin ruta, así que `inlineLocalImages` indexa
+  también por basename además de por ruta relativa.
+- **Autocompletado**: al escribir `[[` en modo MD aparece `WikilinkSuggestions` sobre la
+  toolbar. Inserta el nombre suelto si no es ambiguo y la ruta completa si lo es
+  (`shortestLinkLabel`), igual que Obsidian.
+- VIVO muestra los enlaces como texto plano (Crepe no los conoce); lo importante es que
+  **no los corrompa** al reserializar — de eso se encarga `unescapeMarkers`.
+
 ## Editor: 3 modos — VIVO / MD / VER (`EditorMode = 'live' | 'code' | 'view'`)
 
 Toggle en el topbar (`ModeToggle`). Abrir nota → **VER** (rápido, solo lectura);
@@ -200,7 +228,8 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   para control exacto usar **MD**.
 - **BUG alertas (resuelto)**: Crepe ESCAPA el corchete al serializar (`[!NOTE]`→`\[!NOTE]`),
   y el `\[` rompe la detección de alertas en VER/PDF (salen literales). Fix doble:
-  `unescapeAlerts()` en `mdToBody` (des-escapa al renderizar) + `onLiveChange` (limpia el .md).
+  `unescapeMarkers()` en `mdToBody` (des-escapa al renderizar) + `onLiveChange` (limpia el .md).
+  Esa misma función arregla los enlaces internos (`\[\[nota]]`), que Crepe escapa igual.
 - **Crepe NO renderiza `<img>` HTML** (lo muestra como texto/base64): al entrar a VIVO se
   convierten a `![](...)`. Imágenes del vault se pasan como data URI (`liveMd`), y `onLiveChange`
   restaura las rutas originales (mapa `imgRestore`) para no corromper el `.md`.
@@ -285,3 +314,9 @@ prop (`topInset`, medido en el editor). No confíes en SafeAreaView dentro de un
 - `pnpm typecheck` (tsc --noEmit) y `npx expo export --platform android` (bundle Metro)
   son el mínimo antes de dar algo por bueno. No hay acceso a device en CI; el WebView/
   KaTeX/SAF hay que verlos en el teléfono.
+- `node scripts/check-wikilinks.mjs` ejercita el render de enlaces internos contra el
+  módulo real (resolución, backlinks, embeds, y que el código dentro de ``` ``` `` no se
+  convierta en enlace). Córrelo si tocas `markdown.ts` o `wikilinks.ts`; `tsc` no ve nada
+  de eso. Necesita el esbuild de `webeditor/`.
+- Lo que NINGUNA de las tres cosas cubre y hay que probar en el teléfono: escritura SAF
+  (truncado/recreación), el puente del WebView, y el editor VIVO.

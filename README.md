@@ -60,6 +60,10 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
   - **VER** — preview de solo lectura (WebView) con **callouts de color** (estilo GitHub),
     **KaTeX** (offline), **resaltado de sintaxis**, footnotes, tablas e imágenes (galería y
     **locales del vault** `./img/x.png`). Mismo motor que el **PDF**.
+- **Enlaces internos** estilo Obsidian: `[[nota]]`, `[[nota|alias]]`, `![[imagen.png]]`.
+  Se tocan para saltar a la nota, hay autocompletado al escribir `[[` y cada nota muestra
+  al final quién la menciona (**backlinks**). Los enlaces a notas que no existen se ven
+  apagados, no rotos a mitad de camino.
 - **Tags editables** desde el editor (chips), guardados en **frontmatter YAML** (`---\ntags: [..]\n---`);
   también se derivan `#hashtags` del cuerpo. Portable (Obsidian). **Filtro por tag** en la biblioteca.
 - Saltar de una nota a otra desde el editor (cajón ☰) sin volver a la biblioteca.

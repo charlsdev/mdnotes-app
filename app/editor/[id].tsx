@@ -343,9 +343,11 @@ export default function EditorScreen() {
   const insertWikilink = (note: MdFile) => {
     if (!wikiQuery) return;
     const label = shortestLinkLabel(note, linkIndex);
-    const link = `[[${label}]]`;
-    const next = content.slice(0, wikiQuery.from) + link + content.slice(selection.start);
-    applyEdit(next, wikiQuery.from + link.length);
+    const rest = content.slice(selection.start);
+    // Si el `]]` ya está escrito después del cursor, no pongas otro.
+    const link = rest.startsWith(']]') ? `[[${label}` : `[[${label}]]`;
+    const next = content.slice(0, wikiQuery.from) + link + rest;
+    applyEdit(next, wikiQuery.from + `[[${label}]]`.length);
   };
 
   const handleExportPDF = async () => {
