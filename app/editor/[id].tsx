@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,9 @@ import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownWysiwyg } from '@/components/MarkdownWysiwyg';
 import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
 import { appAlert } from '@/components/AppAlert';
-import { mdToHtml, unescapeAlerts } from '@/lib/markdown';
+import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
+import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
+import { WikilinkSuggestions } from '@/components/WikilinkSuggestions';
 import { readImageDataUri } from '@/storage/vault';
 import { useSettings } from '@/storage/settings';
 import { deriveName, computeTags } from '@/utils/text';
@@ -107,7 +109,7 @@ export default function EditorScreen() {
       imgRestore.current = restore;
       // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
       // (2) Crepe NO renderiza <img> HTML: lo pasamos a Markdown ![](...).
-      const clean = unescapeAlerts(md).replace(
+      const clean = unescapeMarkers(md).replace(
         /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi,
         (_m, src) => `![](${src})`
       );
@@ -122,13 +124,24 @@ export default function EditorScreen() {
   // Cambio desde VIVO: (1) des-escapa alertas, quita `<br />`, restaura imágenes;
   // (2) re-antepone el frontmatter (tags) que Crepe no maneja.
   const onLiveChange = useCallback((md: string) => {
-    let body = md
-      .replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1')
-      .replace(/<br\s*\/?>\n?/gi, '');
+    // Crepe escapa los corchetes al reserializar: rompería tanto las alertas
+    // (`\[!NOTE]`) como los enlaces internos (`\[\[nota]]`).
+    let body = unescapeMarkers(md).replace(/<br\s*\/?>\n?/gi, '');
     for (const [dataUri, ref] of imgRestore.current) body = body.split(dataUri).join(ref);
     const fm = splitFrontmatter(contentRef.current).fm;
     setContent(fm + body);
   }, []);
+
+  // --- Enlaces internos [[nota]] ---
+  const linkIndex = useMemo(() => buildLinkIndex(files), [files]);
+  const resolveLink = useCallback(
+    (target: string) => resolveWikilink(target, file?.folder ?? '', linkIndex),
+    [linkIndex, file?.folder]
+  );
+  const backlinks = useMemo(
+    () => (file ? backlinksFor(file.id, files, linkIndex).map((n) => ({ id: n.id, name: n.name })) : []),
+    [file, files, linkIndex]
+  );
 
   // Tags editables (en el frontmatter del contenido).
   const tags = getFrontmatterTags(content);
@@ -307,11 +320,41 @@ export default function EditorScreen() {
     applyEdit(content.slice(0, start) + cleaned + content.slice(end), start + cleaned.length);
   }, [content, selection, applyEdit]);
 
+  // `[[` abierto antes del cursor (sin cerrar y en la misma línea) → sugerencias.
+  const wikiQuery = useMemo(() => {
+    if (mode !== 'code') return null;
+    const upto = content.slice(0, selection.start);
+    const open = upto.lastIndexOf('[[');
+    if (open < 0) return null;
+    const typed = upto.slice(open + 2);
+    if (typed.includes(']]') || typed.includes('\n') || typed.length > 40) return null;
+    return { from: open, typed };
+  }, [mode, content, selection.start]);
+
+  const wikiSuggestions = useMemo(() => {
+    if (!wikiQuery) return [];
+    const q = wikiQuery.typed.trim().toLowerCase();
+    return files
+      .filter((f) => f.id !== file?.id && (!q || f.name.toLowerCase().includes(q)))
+      .slice(0, 12);
+  }, [wikiQuery, files, file?.id]);
+
+  // Completa el enlace con el nombre suelto, o la ruta si el nombre es ambiguo.
+  const insertWikilink = (note: MdFile) => {
+    if (!wikiQuery) return;
+    const label = shortestLinkLabel(note, linkIndex);
+    const link = `[[${label}]]`;
+    const next = content.slice(0, wikiQuery.from) + link + content.slice(selection.start);
+    applyEdit(next, wikiQuery.from + link.length);
+  };
+
   const handleExportPDF = async () => {
     if (!file) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', vaultImages);
-    const { uri } = await Print.printToFileAsync({ html: mdToHtml(resolved, 'pdf', { pdfMarginMm }) });
+    const { uri } = await Print.printToFileAsync({
+      html: mdToHtml(resolved, 'pdf', { pdfMarginMm, resolveLink }),
+    });
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
       dialogTitle: `${file.name}.pdf`,
@@ -367,6 +410,12 @@ export default function EditorScreen() {
     if (note.id === id) return;
     if (!(await flushSave())) return;
     router.replace({ pathname: '/editor/[id]', params: { id: note.id } });
+  };
+
+  // Tap en un [[enlace interno]] del preview.
+  const openNoteById = (noteId: string) => {
+    const target = files.find((f) => f.id === noteId);
+    if (target) switchTo(target);
   };
 
   const handleDelete = () => {
@@ -458,6 +507,7 @@ export default function EditorScreen() {
               placeholder="Empieza a escribir…"
               placeholderTextColor={theme.muted}
             />
+            <WikilinkSuggestions notes={wikiSuggestions} onPick={insertWikilink} />
             <EditorToolbar
               onWrap={onWrap}
               onPrefix={onPrefix}
@@ -468,7 +518,13 @@ export default function EditorScreen() {
           </>
         ) : (
           <View style={{ flex: 1 }}>
-            <MarkdownPreview content={rendered || content} background={theme.bg} />
+            <MarkdownPreview
+              content={rendered || content}
+              background={theme.bg}
+              resolveLink={resolveLink}
+              backlinks={backlinks}
+              onOpenNote={openNoteById}
+            />
             <View style={[styles.previewActions, { borderTopColor: theme.line }]}>
               <TouchableOpacity
                 onPress={handleExportPDF}
@@ -541,6 +597,8 @@ function resolveRel(folder: string, ref: string): string {
 
 const IMG_MD_RE = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
 const IMG_HTML_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi;
+// Embed estilo Obsidian: ![[carpeta/foto.png]] (el `|tamaño` opcional se ignora).
+const IMG_WIKI_RE = /!\[\[\s*([^[\]|#\n]+?)\s*(?:\|[^[\]\n]*)?\]\]/g;
 
 // Reemplaza imágenes locales (Markdown y <img>) por data URIs leídos del vault.
 // `restore` mapea dataUri → ref original (para deshacer al guardar desde VIVO).
@@ -555,13 +613,31 @@ async function inlineLocalImages(
   while ((m = IMG_MD_RE.exec(content))) refs.add(m[1]);
   IMG_HTML_RE.lastIndex = 0;
   while ((m = IMG_HTML_RE.exec(content))) refs.add(m[1]);
+  IMG_WIKI_RE.lastIndex = 0;
+  // Solo los embeds que apuntan a una imagen; `![[otra nota]]` no es una imagen.
+  while ((m = IMG_WIKI_RE.exec(content))) {
+    if (/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(m[1])) refs.add(m[1]);
+  }
+
+  // Índice por nombre de archivo: Obsidian referencia los adjuntos por nombre
+  // (`![[foto.png]]`) sin importar en qué carpeta del vault estén.
+  const byBasename: Record<string, string> = {};
+  for (const [rel, uri] of Object.entries(images)) {
+    const base = (rel.split('/').pop() ?? rel).toLowerCase();
+    if (!(base in byBasename)) byBasename[base] = uri;
+  }
 
   const replacements: Record<string, string> = {};
   for (const ref of refs) {
     if (/^(https?:|data:|file:|content:)/i.test(ref)) continue;
     const norm = ref.replace(/\\/g, '/').replace(/^\.\//, '');
+    const base = (norm.split('/').pop() ?? norm).toLowerCase();
     const uri =
-      images[resolveRel(folder, ref)] ?? images[norm] ?? images[decodeURIComponent(norm)];
+      images[resolveRel(folder, ref)] ??
+      images[norm] ??
+      images[decodeURIComponent(norm)] ??
+      byBasename[base] ??
+      byBasename[decodeURIComponent(base)];
     if (!uri) continue;
     try {
       replacements[ref] = await readImageDataUri(uri);

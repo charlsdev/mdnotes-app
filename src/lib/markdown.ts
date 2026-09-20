@@ -79,6 +79,58 @@ function githubAlerts(md: MarkdownIt) {
   };
 }
 
+// Enlaces internos `[[nota]]` / `[[nota|alias]]` y embeds `![[imagen.png]]`.
+// Va como regla INLINE (no como reemplazo de texto) para que un `[[` dentro de un
+// bloque de código se quede como está.
+const IMG_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+
+function wikilinks(md: MarkdownIt) {
+  md.inline.ruler.before('link', 'wikilink', (state, silent) => {
+    const src = state.src;
+    let pos = state.pos;
+    const embed = src.charCodeAt(pos) === 0x21; /* ! */
+    if (embed) pos++;
+    if (src.charCodeAt(pos) !== 0x5b || src.charCodeAt(pos + 1) !== 0x5b) return false; /* [[ */
+    const close = src.indexOf(']]', pos + 2);
+    if (close < 0) return false;
+    const body = src.slice(pos + 2, close);
+    if (!body || body.includes('[') || body.includes('\n')) return false;
+
+    if (!silent) {
+      const bar = body.indexOf('|');
+      const alias = bar >= 0 ? body.slice(bar + 1).trim() : '';
+      const target = (bar >= 0 ? body.slice(0, bar) : body).replace(/[#^].*$/, '').trim();
+      const token = state.push(embed ? 'wikiembed' : 'wikilink', '', 0);
+      token.meta = { target, alias, label: alias || (bar >= 0 ? body.slice(0, bar) : body).trim() };
+    }
+    state.pos = close + 2;
+    return true;
+  });
+
+  const esc = md.utils.escapeHtml;
+
+  md.renderer.rules.wikilink = (tokens, idx, _opts, env: any) => {
+    const { target, label } = tokens[idx].meta;
+    const id = env?.resolveLink?.(target);
+    if (!id) {
+      return `<span class="wikilink wikilink-broken" title="No encontré esa nota">${esc(label)}</span>`;
+    }
+    // El tap lo intercepta el script del preview (data-note), no el href.
+    return `<a class="wikilink" href="#" data-note="${esc(id)}">${esc(label)}</a>`;
+  };
+
+  md.renderer.rules.wikiembed = (tokens, idx, _opts, env: any) => {
+    const { target, label } = tokens[idx].meta;
+    // Las imágenes del vault ya vienen sustituidas por su data URI (inlineLocalImages).
+    if (target.startsWith('data:') || IMG_EXT_RE.test(target)) {
+      return `<img src="${esc(target)}" alt="${esc(label)}" />`;
+    }
+    const id = env?.resolveLink?.(target);
+    if (!id) return `<span class="wikilink wikilink-broken" title="No encontré eso">${esc(label)}</span>`;
+    return `<a class="wikilink" href="#" data-note="${esc(id)}">${esc(label)}</a>`;
+  };
+}
+
 const md = new MarkdownIt({
   html: true, // permite <img>, <u>, etc. (contenido propio del usuario)
   linkify: true,
@@ -96,17 +148,29 @@ const md = new MarkdownIt({
   .use(footnotePlugin)
   .use(taskListsPlugin, { label: true })
   .use(katexPlugin)
-  .use(githubAlerts);
+  .use(githubAlerts)
+  .use(wikilinks);
 
-// Crepe (VIVO) escapa el corchete al guardar (`> \[!NOTE]`), lo que rompe la
-// detección de alertas. Lo des-escapamos antes de renderizar (por si el archivo
-// ya quedó así). El guardado desde VIVO también lo limpia (ver editor).
-export function unescapeAlerts(markdown: string): string {
-  return markdown.replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1');
+// Crepe (VIVO) escapa los corchetes al reserializar (`> \[!NOTE]`, `\[\[nota]]`),
+// y eso rompe tanto las alertas como los enlaces internos. Los des-escapamos antes
+// de renderizar (por si el archivo ya quedó así); el guardado desde VIVO también
+// los limpia (ver editor).
+export function unescapeMarkers(markdown: string): string {
+  return markdown
+    .replace(/\\(\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])/gi, '$1')
+    .replace(/\\\[\\\[/g, '[[')
+    .replace(/\\\]\\\]/g, ']]')
+    .replace(/\\\[\[/g, '[[')
+    .replace(/\]\\\]/g, ']]');
 }
 
-export function mdToBody(markdown: string): string {
-  return md.render(stripFrontmatter(unescapeAlerts(markdown)));
+export function mdToBody(markdown: string, env: RenderEnv = {}): string {
+  return md.render(stripFrontmatter(unescapeMarkers(markdown)), env);
+}
+
+// Contexto que necesitan las reglas de render (hoy: resolver enlaces internos).
+export interface RenderEnv {
+  resolveLink?: (target: string) => string | null;
 }
 
 interface Palette {
@@ -176,6 +240,14 @@ function pageCss(
     th, td { border: 1px solid ${p.line}; padding: 7px 11px; text-align: left; }
     th { background: ${p.codeBg}; font-weight: 600; }
     mark { background: ${p.accent}33; color: inherit; padding: 0 2px; border-radius: 3px; }
+    /* Enlaces internos [[nota]] */
+    .wikilink { color: ${p.accent}; text-decoration: none; border-bottom: 1px solid ${p.accent}55; }
+    .wikilink-broken { color: ${p.muted}; border-bottom: 1px dotted ${p.muted}; cursor: default; }
+    .backlinks { border-top: 1px solid ${p.line}; margin-top: 2.5em; padding-top: 1em; font-size: .9em; }
+    .backlinks h2 { font-family: inherit; font-size: .8em; letter-spacing: 1.5px; text-transform: uppercase;
+      color: ${p.muted}; margin: 0 0 .6em; }
+    .backlinks ul { margin: 0; padding-left: 1.1em; }
+    .backlinks li { margin: .2em 0; }
     img { max-width: 100%; height: auto; border-radius: 8px; }
     input[type=checkbox] { margin-right: 6px; }
     ul.contains-task-list { list-style: none; padding-left: .2em; }
@@ -219,15 +291,44 @@ function pageCss(
 // HTML completo y autónomo. `mode` decide la paleta; 'pdf' usa siempre claro.
 const DEFAULT_FONT = `-apple-system, Roboto, system-ui, sans-serif`;
 
+// Los taps en los enlaces internos se avisan por postMessage en vez de navegar: el
+// WebView no tiene a dónde ir, la nota la abre React Native. En el PDF no va.
+const LINK_BRIDGE = `<script>
+document.addEventListener('click', function (e) {
+  var a = e.target && e.target.closest ? e.target.closest('[data-note]') : null;
+  if (!a) return;
+  e.preventDefault();
+  if (window.ReactNativeWebView) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'open-note', id: a.getAttribute('data-note') }));
+  }
+}, true);
+</script>`;
+
+function backlinksHtml(backlinks: Array<{ id: string; name: string }>): string {
+  if (!backlinks.length) return '';
+  const items = backlinks
+    .map((b) => `<li><a class="wikilink" href="#" data-note="${md.utils.escapeHtml(b.id)}">${md.utils.escapeHtml(b.name)}</a></li>`)
+    .join('');
+  return `<div class="backlinks"><h2>Mencionada en</h2><ul>${items}</ul></div>`;
+}
+
 export function mdToHtml(
   markdown: string,
   mode: 'light' | 'dark' | 'pdf' = 'light',
-  opts: { pdfMarginMm?: number; scale?: number; fontStack?: string } = {}
+  opts: {
+    pdfMarginMm?: number;
+    scale?: number;
+    fontStack?: string;
+    resolveLink?: (target: string) => string | null;
+    backlinks?: Array<{ id: string; name: string }>;
+  } = {}
 ): string {
   const isDark = mode === 'dark';
   const forPdf = mode === 'pdf';
   const p = isDark ? DARK : LIGHT;
   const css = pageCss(p, isDark, forPdf, opts.pdfMarginMm ?? 12, opts.scale ?? 1, opts.fontStack ?? DEFAULT_FONT);
+  const body = mdToBody(markdown, { resolveLink: opts.resolveLink });
+  const extra = forPdf ? '' : backlinksHtml(opts.backlinks ?? []) + LINK_BRIDGE;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -236,6 +337,6 @@ export function mdToHtml(
 <style>${KATEX_CSS}</style>
 <style>${css}</style>
 </head>
-<body>${mdToBody(markdown)}</body>
+<body>${body}${extra}</body>
 </html>`;
 }
