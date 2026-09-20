@@ -124,6 +124,17 @@ modo `"wt"`.
   `.markdown`/`.mdx` se prefiere dejar la cola antes que renombrar el archivo del usuario.
 - Por eso `MdFile.dirUri` (la carpeta contenedora) se guarda en el escaneo: hace falta
   para recrear. Sin él se deriva del document id (`parentDirUri`).
+- Antes de borrar se confirma la cola **leyendo el archivo** (el `size` del proveedor
+  puede mentir y lo que sigue es destructivo) y se deja el texto en un
+  `recover-<ts>.md` del almacenamiento interno, que se borra al terminar bien. Si la
+  recreación falla, el error dice dónde quedó.
+- **Las escrituras van EN COLA** (`queued()` en `store.ts`): entre el borrado y la
+  recreación el `.md` no existe, y un segundo guardado cayendo en ese hueco falla con
+  `Location '…' isn't writable` — que es, confusamente, lo que SAF responde cuando el
+  documento NO EXISTE (`DocumentFile.canWrite()` consulta el mime; sin archivo, `false`).
+  Pasaba de verdad: el autoguardado con debounce y el `flushSave` al salir/saltar de nota
+  se solapaban. El editor además no reenvía al disco un texto que ya está escribiéndose
+  (`savingContentRef`). NO quites ninguna de las dos protecciones.
 
 - **LIMITACIÓN**: SAF RECHAZA carpetas de **Google Drive** u otras nubes
   (`content://com.google.android.apps.docs...` → "not a Storage Access Framework URI").

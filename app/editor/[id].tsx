@@ -54,6 +54,8 @@ export default function EditorScreen() {
   // Contenido tal cual está en disco: referencia para saber si hay cambios pendientes.
   // (No se compara contra `file.content`, que en el store es la copia ligera.)
   const savedRef = useRef('');
+  // Texto que está siendo escrito al disco en este momento (o null).
+  const savingContentRef = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   // Nota nueva → CÓDIGO (escribir rápido); abrir existente → VER (leer). VIVO
   // (WYSIWYG) es opt-in por nota para no cargar el editor pesado sin querer.
@@ -190,6 +192,10 @@ export default function EditorScreen() {
   // falló (no hay nada que guardar también cuenta como éxito).
   const doSave = useCallback(async (): Promise<boolean> => {
     if (!file || !ready || content === savedRef.current) return true;
+    // Ese mismo texto ya se está escribiendo (el autoguardado con debounce y el
+    // flush al salir se solapan): no lo mandes dos veces al disco.
+    if (savingContentRef.current === content) return true;
+    savingContentRef.current = content;
     const updated: MdFile = {
       ...file,
       content,
@@ -218,6 +224,8 @@ export default function EditorScreen() {
         { variant: 'error' }
       );
       return false;
+    } finally {
+      if (savingContentRef.current === content) savingContentRef.current = null;
     }
   }, [file, content, ready, upsert]);
 

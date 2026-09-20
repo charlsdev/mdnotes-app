@@ -210,7 +210,18 @@ export async function writeVaultFile(
 
   const expected = utf8Length(content);
   const actual = fileSize(uri);
-  if (actual <= expected || actual < 0) return uri; // sin cola sobrante
+  if (actual < 0 || actual <= expected) return uri; // sin cola sobrante
+
+  // El tamaño puede mentir (proveedor con caché), y lo que sigue es destructivo:
+  // confirmamos leyendo. Solo hay cola si el archivo arranca con lo que escribimos
+  // y además trae algo más.
+  let onDisk: string;
+  try {
+    onDisk = await FileSystem.readAsStringAsync(uri);
+  } catch {
+    return uri;
+  }
+  if (onDisk === content || !onDisk.startsWith(content)) return uri;
 
   const name = fileNameFromUri(uri);
   const ext = (name.split('.').pop() ?? '').toLowerCase();
@@ -221,19 +232,32 @@ export async function writeVaultFile(
   // el archivo del usuario.
   if (!dir || !mime) return uri;
 
+  // Seguro de vida: entre el borrado y la recreación el archivo NO existe. Si algo
+  // falla justo ahí, el texto tiene que sobrevivir en algún lado.
+  const stash = `${FileSystem.documentDirectory}recover-${Date.now()}.md`;
+  await FileSystem.writeAsStringAsync(stash, content);
+
   await SAF.deleteAsync(uri);
   try {
     // Nombre COMPLETO (con extensión) y mime que le corresponde: así el proveedor
     // reusa el nombre tal cual en vez de agregar otra extensión.
     const recreated = await SAF.createFileAsync(dir, name, mime);
     await SAF.writeAsStringAsync(recreated, content);
+    await FileSystem.deleteAsync(stash, { idempotent: true });
     return recreated;
   } catch {
-    // El original ya no existe: reintenta con nombre saneado antes que dejar la
-    // nota sin archivo. Si esto también falla, el error sube y la UI lo muestra.
-    const fallback = await SAF.createFileAsync(dir, sanitizeName(name.replace(MD_RE, '')), 'text/markdown');
-    await SAF.writeAsStringAsync(fallback, content);
-    return fallback;
+    try {
+      // El original ya no existe: reintenta con nombre saneado antes que dejar la
+      // nota sin archivo.
+      const fallback = await SAF.createFileAsync(dir, `${sanitizeName(name.replace(MD_RE, ''))}.md`, 'text/markdown');
+      await SAF.writeAsStringAsync(fallback, content);
+      await FileSystem.deleteAsync(stash, { idempotent: true });
+      return fallback;
+    } catch (e: any) {
+      throw new Error(
+        `No pude recrear "${name}" en la carpeta (${e?.message ?? e}). Tu texto quedó guardado en ${stash}`
+      );
+    }
   }
 }
 

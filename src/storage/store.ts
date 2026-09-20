@@ -28,6 +28,23 @@ const STARTER = '# Nueva nota\n\nEscribe en Markdown. Alterna VIVO / MD / VER ar
 
 const byRecent = (a: MdFile, b: MdFile) => b.updatedAt - a.updatedAt;
 
+// Cola de operaciones de disco: NUNCA dos a la vez.
+// `writeVaultFile` borra y recrea el archivo cuando hay que truncarlo, y durante
+// esos milisegundos el .md no existe. Un segundo guardado cayendo en ese hueco
+// falla con "Location '…' isn't writable" (que es lo que SAF responde cuando el
+// documento no está). Pasa de verdad: el autoguardado con debounce y el flush al
+// salir/saltar de nota pueden solaparse.
+let diskQueue: Promise<unknown> = Promise.resolve();
+
+function queued<T>(op: () => Promise<T>): Promise<T> {
+  const next = diskQueue.then(op, op); // corre igual si la anterior falló
+  diskQueue = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
 export const useFilesStore = create<FilesState>((set, get) => ({
   files: [],
   loading: false,
@@ -102,26 +119,28 @@ export const useFilesStore = create<FilesState>((set, get) => ({
   // Persiste el .md y refleja el resultado en la lista. LANZA si la escritura
   // falla (permiso revocado, tarjeta removida, archivo borrado desde otra app):
   // el editor lo captura y avisa en vez de decir "Guardado" sin haber guardado.
-  upsert: async (file) => {
-    let uri = file.uri;
-    if (uri) {
-      // Puede devolver otra URI si hubo que recrear el archivo para truncarlo.
-      uri = await Vault.writeVaultFile(uri, file.content, file.dirUri);
-    } else {
-      await FilesAPI.saveFile(file);
-    }
-    const stored: MdFile = { ...file, uri, content: elideDataUris(file.content) };
-    const others = get().files.filter((f) => f.id !== file.id);
-    set({ files: [stored, ...others].sort(byRecent) });
-    return stored;
-  },
+  upsert: (file) =>
+    queued(async () => {
+      let uri = file.uri;
+      if (uri) {
+        // Puede devolver otra URI si hubo que recrear el archivo para truncarlo.
+        uri = await Vault.writeVaultFile(uri, file.content, file.dirUri);
+      } else {
+        await FilesAPI.saveFile(file);
+      }
+      const stored: MdFile = { ...file, uri, content: elideDataUris(file.content) };
+      const others = get().files.filter((f) => f.id !== file.id);
+      set({ files: [stored, ...others].sort(byRecent) });
+      return stored;
+    }),
 
-  remove: async (id) => {
-    const file = get().files.find((f) => f.id === id);
-    if (file?.uri) await Vault.deleteVaultFile(file.uri);
-    else await FilesAPI.deleteFile(id);
-    set({ files: get().files.filter((f) => f.id !== id) });
-  },
+  remove: (id) =>
+    queued(async () => {
+      const file = get().files.find((f) => f.id === id);
+      if (file?.uri) await Vault.deleteVaultFile(file.uri);
+      else await FilesAPI.deleteFile(id);
+      set({ files: get().files.filter((f) => f.id !== id) });
+    }),
 
   create: async (name) => {
     const now = Date.now();
