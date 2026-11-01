@@ -2,7 +2,7 @@
   "expo": {
     "name": "MDNotes",
     "slug": "mdnotes",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "mdnotes",
@@ -30,7 +30,7 @@
         "backgroundColor": "#f5f1ea"
       },
       "package": "xyz.charlsdev.mdnotes",
-      "intentFilters": [
+      "versionCode": 1,      "intentFilters": [
         {
           "action": "VIEW",
           "data": [{ "mimeType": "text/markdown" }, { "mimeType": "text/plain" }],
@@ -48,7 +48,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "MDNotes accede a tus fotos para insertar imágenes en las notas."
+          "photosPermission": "MDNotes accede a tus fotos para insertar imágenes en las notas.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [
