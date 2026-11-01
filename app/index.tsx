@@ -17,53 +17,16 @@ import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Linking from 'expo-linking';
-import Svg, { Path } from 'react-native-svg';
 import { useTheme, fonts, spacing, radius } from '@/theme';
 import { useFilesStore } from '@/storage/store';
-import { relativeTime, preview, deriveName } from '@/utils/text';
+import { relativeTime, preview, deriveName, nameFromUri, MD_RE } from '@/utils/text';
 import { MdFile, isNote } from '@/types';
-import { openWithSystemViewer } from '@/storage/vault';
+import { openAttachment, alertLoadFailed } from '@/utils/open-file';
 import { Wordmark } from '@/components/Wordmark';
 import { Footer } from '@/components/Footer';
 import { NoteTree } from '@/components/NoteTree';
+import { FolderIcon, RefreshIcon, GearIcon } from '@/components/LibraryIcons';
 import { appAlert } from '@/components/AppAlert';
-
-const MD_RE = /\.(md|markdown|txt|mdx)$/i;
-
-// Nombre de nota a partir de la URI de un archivo externo. Devuelve '' cuando el
-// proveedor usa ids opacos (ej. Descargas: `msf:1000000123`): ahí el nombre se
-// deriva del contenido en vez de inventar uno con el id.
-function nameFromUri(url: string): string {
-  const decoded = decodeURIComponent(url);
-  const last = (decoded.split(':').pop() ?? decoded).split(/[/\\]/).pop() ?? '';
-  return MD_RE.test(last) ? last.replace(MD_RE, '') : '';
-}
-
-function FolderIcon({ color }: { color: string }) {
-  return (
-    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2Z" />
-    </Svg>
-  );
-}
-
-function RefreshIcon({ color }: { color: string }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <Path d="M21 3v6h-6" />
-    </Svg>
-  );
-}
-
-function GearIcon({ color }: { color: string }) {
-  return (
-    <Svg width={19} height={19} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <Path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-      <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-    </Svg>
-  );
-}
 
 export default function LibraryScreen() {
   const theme = useTheme();
@@ -93,14 +56,16 @@ export default function LibraryScreen() {
     Haptics.selectionAsync();
     try {
       await load();
+    } catch (e) {
+      alertLoadFailed(e);
     } finally {
       setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    if (!loaded) load();
-  }, [loaded]);
+    if (!loaded) load().catch(alertLoadFailed);
+  }, [loaded, load]);
 
   // Los PDF e imágenes se listan pero no son notas: se cuentan aparte para no
   // inflar el número.
@@ -178,35 +143,10 @@ export default function LibraryScreen() {
 
   // Navega al editor pasando el id como PARÁMETRO (se codifica bien; los id de
   // vault son URIs SAF con / y : que romperían la ruta si se interpolan).
-  // Una nota abre el editor; lo demás (PDF, imágenes) no se edita: lo abre el visor
-  // del teléfono.
+  // Lo que no es nota (PDF, imágenes, texto) va a su visor.
   const openNote = useCallback(
     (note: MdFile) => {
-      // PDF, imágenes y texto se ven DENTRO de la app; lo demás lo abre el teléfono.
-      if (note.kind === 'pdf') {
-        router.push({ pathname: '/pdf/[id]', params: { id: note.id } });
-        return;
-      }
-      if (note.kind === 'image') {
-        router.push({ pathname: '/image/[id]', params: { id: note.id } });
-        return;
-      }
-      if (note.kind === 'text') {
-        router.push({ pathname: '/file/[id]', params: { id: note.id } });
-        return;
-      }
-      if (!isNote(note)) {
-        if (!note.uri) return;
-        openWithSystemViewer(note.uri, note.name).catch((e: any) =>
-          appAlert(
-            `No pude abrir "${note.name}"`,
-            `${e?.message ?? e}\n\nPuede que no tengas una app instalada que abra ese tipo de archivo.`,
-            undefined,
-            { variant: 'error' }
-          )
-        );
-        return;
-      }
+      if (openAttachment(router, note)) return;
       router.push({ pathname: '/editor/[id]', params: { id: note.id } });
     },
     [router]

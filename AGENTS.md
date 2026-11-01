@@ -32,6 +32,10 @@ src/
                      · settings.ts (ajustes: pdfMarginMm, autosave, theme, readingScale/Font)
   lib/               markdown.ts (mdToHtml, compartido VER/PDF) · katex-css.ts (GENERADO)
                      · tree.ts (buildTreeRows) · frontmatter.ts (tags YAML)
+                     · local-images.ts (inlineLocalImages) · md-format.ts (ediciones de la toolbar)
+                     — puros, sin RN: los prueba scripts/render-cases.ts
+  utils/open-file.ts openAttachment (enruta PDF/imagen/texto a su visor; lo usan biblioteca
+                     y editor) · alertLoadFailed
   theme/             Paleta de marca + fuentes + tokens
   types/  utils/
 assets/              icon, icon-dark, adaptive-icon, splash(*), favicon, webeditor.html (GENERADO)
@@ -136,6 +140,12 @@ sola carpeta (`mdnotes:vault-uri`) la primera vez y la borra.
   `VaultScan.folders` las junta durante el escaneo (que ya las recorría) y el árbol las
   muestra aunque estén vacías — como hace Obsidian. Con un filtro activo NO se pasan:
   filtrando, el árbol debe mostrar lo que coincide, no la estructura entera.
+- **`load()`**: dos llamadas simultáneas comparten el mismo escaneo (biblioteca y
+  editor lo piden a la vez al arrancar). Lo que se guarda/crea/borra MIENTRAS escanea
+  (`touchedDuringLoad`) gana sobre el resultado del escaneo, que es una foto tomada al
+  empezar — sin eso, refrescar justo después de guardar devolvía la versión vieja a la
+  lista. **Lanza** si no puede leer ni la lista de carpetas ni las notas internas
+  (`loading` vuelve a false igual): quien lo llame hace `.catch(alertLoadFailed)`.
 - **Refrescar** (botón ↻ en la biblioteca y deslizar en el árbol, también desde el
   cajón del editor) = `load()`, que re-escanea TODAS las carpetas abiertas. Hace falta
   porque el escaneo solo corre al arrancar: lo que el usuario cree desde otra app o
@@ -264,8 +274,13 @@ es un muro de base64) y engorda cada escaneo. Por eso, con vault abierto:
   Hay casos de prueba para cada forma en `scripts/render-cases.ts`.
 - **Imágenes locales del vault** (`![](./img/x.png)` o `<img src>`): el escaneo indexa las
   imágenes (`VaultScan.images`: relPath→uri) y el editor las resuelve a data URI antes del
-  preview/PDF (`inlineLocalImages` en `editor/[id].tsx` devuelve `{md, restore}`;
+  preview/PDF (`inlineLocalImages` en `lib/local-images.ts` devuelve `{md, restore}`;
   `readImageDataUri` lee SAF en base64). Maneja `./`, `../` y `\` de Windows.
+- **GOTCHA `validateLink`**: markdown-it solo acepta `data:` de gif/png/jpeg/webp. Un
+  `![](logo.svg)` del vault llegaba como `data:image/svg+xml` y se pintaba como TEXTO con
+  el base64 a la vista. `markdown.ts` amplía la lista a svg/bmp/avif (`DATA_IMAGE_RE`);
+  el resto de esquemas peligrosos (`javascript:`…) sigue bloqueado. Un SVG sin
+  `width`/`height` en un `<img>` se dibuja enorme: para íconos en línea, `<img width>`.
 
 ## Enlaces internos (wikilinks, estilo Obsidian)
 
@@ -469,13 +484,14 @@ prop (`topInset`, medido en el editor). No confíes en SafeAreaView dentro de un
 
 ## Verificación
 
-- `pnpm typecheck` (tsc --noEmit) y `npx expo export --platform android` (bundle Metro)
-  son el mínimo antes de dar algo por bueno. No hay acceso a device en CI; el WebView/
+- `pnpm typecheck` (tsc --noEmit), `pnpm lint` (`eslint.config.js`, config de Expo;
+  ignora initials/webeditor/pdfviewer/android y `katex-css.ts`) y `npx expo export
+  --platform android` (bundle Metro) son el mínimo antes de dar algo por bueno. No hay acceso a device en CI; el WebView/
   KaTeX/SAF hay que verlos en el teléfono.
 - `node scripts/check-render.mjs` ejercita contra los módulos reales el render de enlaces
   internos (resolución, backlinks, embeds, y que el código dentro de ``` ``` `` NO se
   convierta en enlace) y las rutas de adjuntos (incluido el round-trip
-  `relativeTo` ↔ `resolveRel`). Córrelo si tocas `markdown.ts`, `wikilinks.ts` o
-  `paths.ts`; `tsc` no ve nada de eso. Necesita el esbuild de `webeditor/`.
+  `relativeTo` ↔ `resolveRel`), además de `local-images.ts` y `md-format.ts`. Córrelo si
+  tocas algo de `src/lib/`; `tsc` no ve nada de eso. Necesita el esbuild de `webeditor/`.
 - Lo que NINGUNA de las tres cosas cubre y hay que probar en el teléfono: escritura SAF
   (truncado/recreación), el puente del WebView, y el editor VIVO.

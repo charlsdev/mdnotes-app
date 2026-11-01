@@ -18,7 +18,7 @@ export function MarkdownPreview({
   background: string;
   // Resolución de los enlaces internos [[nota]] → id de nota (null si no existe).
   resolveLink?: (target: string) => string | null;
-  backlinks?: Array<{ id: string; name: string }>;
+  backlinks?: { id: string; name: string }[];
   onOpenNote?: (id: string) => void;
 }) {
   const scheme = useEffectiveScheme();

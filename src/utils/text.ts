@@ -51,6 +51,17 @@ export function preview(text: string, max = 120): string {
   return stripped.length > max ? stripped.slice(0, max) + '…' : stripped;
 }
 
+export const MD_RE = /\.(md|markdown|txt|mdx)$/i;
+
+// Nombre de nota a partir de la URI de un archivo externo. Devuelve '' cuando el
+// proveedor usa ids opacos (ej. Descargas: `msf:1000000123`): ahí el nombre se
+// deriva del contenido en vez de inventar uno con el id.
+export function nameFromUri(url: string): string {
+  const decoded = decodeURIComponent(url);
+  const last = (decoded.split(':').pop() ?? decoded).split(/[/\\]/).pop() ?? '';
+  return MD_RE.test(last) ? last.replace(MD_RE, '') : '';
+}
+
 export function deriveName(content: string): string {
   const body = stripFrontmatter(content);
   const firstLine = body.split('\n').find((l) => l.trim().length > 0) ?? '';

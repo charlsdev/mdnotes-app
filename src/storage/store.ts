@@ -62,6 +62,13 @@ function queued<T>(op: () => Promise<T>): Promise<T> {
   return next;
 }
 
+// `load()` escanea durante segundos con una foto del disco tomada al empezar. Lo que
+// se guarda, crea o borra mientras tanto ya está bien en `files`; sin esto, el `set`
+// final lo pisaría con la versión del escaneo. Solo existe mientras corre un load.
+let touchedDuringLoad: Set<string> | null = null;
+// Biblioteca y editor llaman a `load()` a la vez al arrancar: comparten el escaneo.
+let loadInFlight: Promise<void> | null = null;
+
 export const useFilesStore = create<FilesState>((set, get) => ({
   files: [],
   loading: false,
@@ -71,41 +78,63 @@ export const useFilesStore = create<FilesState>((set, get) => ({
   vaultFolders: {},
   lastVaultId: null,
 
-  load: async () => {
-    set({ loading: true });
-    const uris = await Vault.getVaultUris();
-    const internal = await FilesAPI.listFiles();
-    const vaults: VaultRef[] = [];
-    const vaultFiles: MdFile[] = [];
-    const images: Record<string, Record<string, string>> = {};
-    const folders: Record<string, string[]> = {};
-
-    for (const uri of uris) {
+  // LANZA si no se puede leer ni la lista de carpetas ni las notas internas; aun
+  // así `loading` siempre vuelve a false.
+  load: () => {
+    if (loadInFlight) return loadInFlight;
+    const touched = new Set<string>();
+    touchedDuringLoad = touched;
+    loadInFlight = (async () => {
+      set({ loading: true });
       try {
-        const scan = await Vault.listVault(uri);
-        const id = Vault.vaultIdForUri(uri);
-        vaults.push({ id, uri, name: Vault.vaultName(uri) });
-        vaultFiles.push(...scan.files);
-        images[id] = scan.images;
-        folders[id] = scan.folders;
-      } catch {
-        // Permiso perdido (carpeta movida / revocada): olvidamos ESA carpeta y
-        // seguimos con el resto — una rota no puede dejarte sin las demás.
-      }
-    }
-    if (vaults.length !== uris.length) {
-      await Vault.setVaultUris(vaults.map((v) => v.uri));
-    }
+        const uris = await Vault.getVaultUris();
+        const internal = await FilesAPI.listFiles();
+        const vaults: VaultRef[] = [];
+        const vaultFiles: MdFile[] = [];
+        const images: Record<string, Record<string, string>> = {};
+        const folders: Record<string, string[]> = {};
 
-    set({
-      files: [...vaultFiles, ...internal].sort(byRecent),
-      vaults,
-      vaultImages: images,
-      vaultFolders: folders,
-      lastVaultId: await Vault.getLastVaultId(),
-      loading: false,
-      loaded: true,
-    });
+        for (const uri of uris) {
+          try {
+            const scan = await Vault.listVault(uri);
+            const id = Vault.vaultIdForUri(uri);
+            vaults.push({ id, uri, name: Vault.vaultName(uri) });
+            vaultFiles.push(...scan.files);
+            images[id] = scan.images;
+            folders[id] = scan.folders;
+          } catch {
+            // Permiso perdido (carpeta movida / revocada): olvidamos ESA carpeta y
+            // seguimos con el resto — una rota no puede dejarte sin las demás.
+          }
+        }
+        if (vaults.length !== uris.length) {
+          await Vault.setVaultUris(vaults.map((v) => v.uri));
+        }
+        const lastVaultId = await Vault.getLastVaultId();
+
+        // Lo tocado durante el escaneo gana sobre lo escaneado (y lo borrado no vuelve).
+        const current = new Map(get().files.map((f) => [f.id, f]));
+        const merged = [...vaultFiles, ...internal].filter((f) => !touched.has(f.id));
+        for (const id of touched) {
+          const f = current.get(id);
+          if (f) merged.push(f);
+        }
+
+        set({
+          files: merged.sort(byRecent),
+          vaults,
+          vaultImages: images,
+          vaultFolders: folders,
+          lastVaultId,
+          loaded: true,
+        });
+      } finally {
+        touchedDuringLoad = null;
+        loadInFlight = null;
+        set({ loading: false });
+      }
+    })();
+    return loadInFlight;
   },
 
   // Abre OTRA carpeta (se suman, no se reemplazan). Lista sus .md aquí mismo (sin
@@ -181,6 +210,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
         await FilesAPI.saveFile(file);
       }
       const stored: MdFile = { ...file, uri, content: elideDataUris(file.content) };
+      touchedDuringLoad?.add(file.id);
       const others = get().files.filter((f) => f.id !== file.id);
       set({ files: [stored, ...others].sort(byRecent) });
       return stored;
@@ -191,6 +221,7 @@ export const useFilesStore = create<FilesState>((set, get) => ({
       const file = get().files.find((f) => f.id === id);
       if (file?.uri) await Vault.deleteVaultFile(file.uri);
       else await FilesAPI.deleteFile(id);
+      touchedDuringLoad?.add(id);
       set({ files: get().files.filter((f) => f.id !== id) });
     }),
 
@@ -234,6 +265,7 @@ async function createNote(
       tags: computeTags(content),
     };
     await Vault.setLastVaultId(target.id);
+    touchedDuringLoad?.add(file.id);
     set({ files: [file, ...get().files], lastVaultId: target.id });
     return { ...file, content };
   }
@@ -247,6 +279,7 @@ async function createNote(
     tags: computeTags(content),
   };
   await FilesAPI.saveFile(file);
+  touchedDuringLoad?.add(file.id);
   set({ files: [{ ...file, content: elideDataUris(content) }, ...get().files] });
   return file;
 }

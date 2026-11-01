@@ -29,7 +29,7 @@ mdnotes-app/
 │   ├── components/        EditorToolbar, ModeToggle, MarkdownPreview (VER), MarkdownWysiwyg (VIVO),
 │   │                      NoteTree, NoteTreeDrawer, AppAlert, Footer, CharlsdevMark, Wordmark
 │   ├── storage/           files.ts (internas) · vault.ts (SAF) · store.ts · settings.ts
-│   ├── lib/               markdown.ts · katex-css.ts (generado) · tree.ts
+│   ├── lib/               markdown.ts · katex-css.ts (generado) · tree.ts · local-images.ts · md-format.ts
 │   ├── theme/ · types/ · utils/
 ├── assets/                icon, splash, favicon, webeditor.html (editor VIVO, generado)
 ├── webeditor/             Proyecto de build del editor WYSIWYG (Milkdown Crepe) — no se compila
@@ -96,6 +96,7 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 
 ```bash
 pnpm install
+pnpm typecheck && pnpm lint && node scripts/check-render.mjs   # verificación
 ```
 ```powershell
 pwsh -File .\build-and-install.ps1 -Prebuild   # regenera android/ + gradle + adb install

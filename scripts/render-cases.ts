@@ -16,6 +16,8 @@ import {
   isKnownTextName,
 } from '@/lib/paths';
 import { buildTreeRows, pathToNote } from '@/lib/tree';
+import { inlineLocalImages } from '@/lib/local-images';
+import { wrapSelection, prefixLine, clearFormatting, insertAt } from '@/lib/md-format';
 import { isNote, fileBadge, type MdFile } from '@/types';
 
 const note = (id: string, name: string, folder = '', content = ''): MdFile => ({
@@ -93,6 +95,13 @@ check('código inline intacto', h4.includes('<code>[[no soy enlace]]</code>'), h
 const h5 = render('![[foto.png]] y ![[data:image/png;base64,AAAABBBB]]');
 check('![[foto.png]] → <img>', h5.includes('<img src="foto.png"'), h5);
 check('embed ya resuelto a data URI → <img>', h5.includes('src="data:image/png;base64,AAAABBBB"'), h5);
+
+// 5b. Una imagen .svg del vault llega como data URI image/svg+xml. markdown-it la
+// rechazaba por defecto y el base64 salía como TEXTO (dentro de un enlace, además).
+const h5svg = render('[by ![](data:image/svg+xml;base64,PHN2Zz4=) charlsdev](https://charlsdev.xyz)');
+check('![](data:image/svg+xml…) → <img>, no texto',
+  h5svg.includes('<img src="data:image/svg+xml;base64,PHN2Zz4="') && !h5svg.includes('!['), h5svg);
+check('javascript: sigue bloqueado', !render('[x](javascript:alert(1))').includes('href="javascript'));
 
 // 6. Embed de nota (no imagen) → enlace
 const h6 = render('![[Ideas]]');
@@ -429,5 +438,39 @@ check('y en la otra carpeta resuelve a la suya',
 check('una nota que solo existe en otra carpeta queda como enlace roto',
   resolveWikilink('Desde B', '', idxV1) === null);
 
-console.log(failed === 0 ? '\nTODO OK' : `\n${failed} FALLAS`);
-process.exit(failed === 0 ? 0 : 1);
+// 25. Imágenes locales → data URI (lo que ve el preview), y vuelta atrás (VIVO)
+// (async: esbuild empaqueta en CJS, que no admite await de nivel superior)
+async function imageCases() {
+  const fakeRead = async (uri: string) => `data:image/svg+xml;base64,${uri.length}`;
+  const src = '![a](img/logo.svg) <img src="./img/logo.svg"> ![[foto.png]] ![](no-existe.png)';
+  const inl = await inlineLocalImages(
+    src,
+    '',
+    { 'img/logo.svg': 'content://v/img%2Flogo.svg', 'fotos/foto.png': 'content://v/fotos%2Ffoto.png' },
+    fakeRead
+  );
+  check('Markdown, <img> y ![[x]] se resuelven a data URI',
+    !inl.md.includes('](img/logo.svg)') && !inl.md.includes('"./img/logo.svg"') && !inl.md.includes('![[foto.png]]'), inl.md);
+  check('una imagen que no está en la carpeta se deja como está', inl.md.includes('![](no-existe.png)'), inl.md);
+  let back = inl.md;
+  for (const [data, ref] of inl.restore) back = back.split(data).join(ref);
+  check('restore devuelve las rutas originales', back === src, back);
+}
+
+// 26. Toolbar del modo MD
+const w = wrapSelection('hola mundo', { start: 5, end: 10 }, '**');
+check('negrita sobre la selección', w.text === 'hola **mundo**' && w.caret === 14, JSON.stringify(w));
+const w0 = wrapSelection('ab', { start: 1, end: 1 }, '`');
+check('sin selección deja el cursor en medio', w0.text === 'a``b' && w0.caret === 2, JSON.stringify(w0));
+const pl = prefixLine('uno\ndos', { start: 6, end: 6 }, '## ');
+check('el prefijo va al inicio de la línea actual', pl.text === 'uno\n## dos' && pl.caret === 9, JSON.stringify(pl));
+const cl = clearFormatting('# **Tí**tulo ==x==', { start: 0, end: 18 });
+check('limpiar formato quita marcadores y prefijos', cl?.text === 'Título x', JSON.stringify(cl));
+check('limpiar sin selección no hace nada', clearFormatting('x', { start: 0, end: 0 }) === null);
+const ins = insertAt('ab', { start: 1, end: 1 }, '[]()', -1);
+check('insertar con desplazamiento del cursor', ins.text === 'a[]()b' && ins.caret === 4, JSON.stringify(ins));
+
+imageCases().then(() => {
+  console.log(failed === 0 ? '\nTODO OK' : `\n${failed} FALLAS`);
+  process.exit(failed === 0 ? 0 : 1);
+});

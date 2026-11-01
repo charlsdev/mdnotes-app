@@ -194,6 +194,13 @@ const md = new MarkdownIt({
   .use(wikilinks)
   .use(localLinks);
 
+// markdown-it solo deja pasar `data:` de gif/png/jpeg/webp. Las imágenes del vault
+// llegan como data URI (`inlineLocalImages`), así que un `![](logo.svg)` salía como
+// TEXTO con el base64 a la vista. En un <img> un SVG no ejecuta scripts.
+const DATA_IMAGE_RE = /^data:image\/(?:gif|png|jpeg|webp|svg\+xml|bmp|avif);/i;
+const defaultValidateLink = md.validateLink.bind(md);
+md.validateLink = (url) => DATA_IMAGE_RE.test(url.trim()) || defaultValidateLink(url);
+
 // Crepe (VIVO) escapa los corchetes al reserializar (`> \[!NOTE]`, `\[\[nota]]`),
 // y eso rompe tanto las alertas como los enlaces internos. Los des-escapamos antes
 // de renderizar (por si el archivo ya quedó así); el guardado desde VIVO también
@@ -365,7 +372,7 @@ document.addEventListener('click', function (e) {
 }, true);
 </script>`;
 
-function backlinksHtml(backlinks: Array<{ id: string; name: string }>): string {
+function backlinksHtml(backlinks: { id: string; name: string }[]): string {
   if (!backlinks.length) return '';
   const items = backlinks
     .map(
@@ -384,7 +391,7 @@ export function mdToHtml(
     scale?: number;
     fontStack?: string;
     resolveLink?: (target: string) => string | null;
-    backlinks?: Array<{ id: string; name: string }>;
+    backlinks?: { id: string; name: string }[];
   } = {}
 ): string {
   const isDark = mode === 'dark';

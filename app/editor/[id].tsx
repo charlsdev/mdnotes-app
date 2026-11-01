@@ -12,35 +12,32 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { useTheme, fonts, spacing, type Theme } from '@/theme';
+import { useTheme, fonts, spacing } from '@/theme';
 import { useFilesStore } from '@/storage/store';
-import { MdFile, EditorMode, isNote } from '@/types';
+import { MdFile, EditorMode } from '@/types';
 import { EditorToolbar } from '@/components/EditorToolbar';
 import { ModeToggle } from '@/components/ModeToggle';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownWysiwyg } from '@/components/MarkdownWysiwyg';
 import { NoteTreeDrawer } from '@/components/NoteTreeDrawer';
+import { SaveIndicator, type SaveState } from '@/components/SaveIndicator';
 import { appAlert } from '@/components/AppAlert';
 import { mdToHtml, unescapeMarkers } from '@/lib/markdown';
 import { buildLinkIndex, resolveWikilink, backlinksFor, shortestLinkLabel } from '@/lib/wikilinks';
-import { relativeTo, encodeRef, createImageResolver, attachmentFolderFromSetting } from '@/lib/paths';
+import { relativeTo, encodeRef, attachmentFolderFromSetting } from '@/lib/paths';
+import { inlineLocalImages, imageBaseName } from '@/lib/local-images';
+import { insertAt, wrapSelection, prefixLine, clearFormatting, type Sel, type Edit } from '@/lib/md-format';
 import { WikilinkSuggestions } from '@/components/WikilinkSuggestions';
-import { readImageDataUri, saveVaultImage, attachmentFolderFor, openWithSystemViewer } from '@/storage/vault';
+import { readImageDataUri, saveVaultImage, attachmentFolderFor } from '@/storage/vault';
+import { writeShareCopy } from '@/storage/files';
 import { useSettings } from '@/storage/settings';
 import { deriveName, computeTags } from '@/utils/text';
+import { openAttachment, alertLoadFailed } from '@/utils/open-file';
 import { splitFrontmatter, stripFrontmatter, getFrontmatterTags, setFrontmatterTags } from '@/lib/frontmatter';
 import { TagsBar } from '@/components/TagsBar';
-
-type SaveState = 'saved' | 'saving' | 'dirty';
-
-interface Sel {
-  start: number;
-  end: number;
-}
 
 export default function EditorScreen() {
   const { id, new: isNew } = useLocalSearchParams<{ id: string; new?: string }>();
@@ -72,7 +69,7 @@ export default function EditorScreen() {
   // Markdown con imágenes del vault embebidas (data URI) para el editor VIVO, y
   // el mapa para restaurar las rutas originales al guardar.
   const [liveMd, setLiveMd] = useState<string | null>(null);
-  const imgRestore = useRef<Array<[string, string]>>([]);
+  const imgRestore = useRef<[string, string][]>([]);
 
   // Todo lo que sigue es RELATIVO A LA CARPETA de la nota: sus imágenes, sus
   // adjuntos y sus enlaces. Con varias carpetas abiertas, mezclarlas mostraría
@@ -82,9 +79,7 @@ export default function EditorScreen() {
     () => (file?.vaultId ? (vaultImages[file.vaultId] ?? {}) : {}),
     [vaultImages, file?.vaultId]
   );
-  // El cajón para saltar de nota es solo de NOTAS (un PDF no se edita).
-  const notes = useMemo(() => files.filter(isNote), [files]);
-  // El índice de enlaces, en cambio, incluye los adjuntos: `[manual](manual.pdf)` y
+  // El índice de enlaces incluye los adjuntos: `[manual](manual.pdf)` y
   // `[[manual.pdf]]` son enlaces válidos en Obsidian. Al tocarlos, el editor decide
   // si abre la nota o se lo pasa al visor del teléfono.
   const vaultFiles = useMemo(
@@ -113,6 +108,8 @@ export default function EditorScreen() {
     setRescanning(true);
     try {
       await load();
+    } catch (e) {
+      alertLoadFailed(e);
     } finally {
       setRescanning(false);
     }
@@ -123,7 +120,7 @@ export default function EditorScreen() {
   useEffect(() => {
     if (mode !== 'view') return;
     let alive = true;
-    inlineLocalImages(content, file?.folder ?? '', noteImages).then(({ md }) => {
+    inlineLocalImages(content, file?.folder ?? '', noteImages, readImageDataUri).then(({ md }) => {
       if (alive) setRendered(md);
     });
     return () => {
@@ -152,7 +149,7 @@ export default function EditorScreen() {
     let alive = true;
     setLiveMd(null);
     // El frontmatter (tags) NO va a Crepe (lo mostraría raro); se preserva al guardar.
-    inlineLocalImages(stripFrontmatter(contentRef.current), file?.folder ?? '', noteImages).then(({ md, restore }) => {
+    inlineLocalImages(stripFrontmatter(contentRef.current), file?.folder ?? '', noteImages, readImageDataUri).then(({ md, restore }) => {
       if (!alive) return;
       imgRestore.current = restore;
       // (1) des-escapa marcadores de alerta por si el archivo quedó con `\[!`.
@@ -166,7 +163,7 @@ export default function EditorScreen() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [mode, id, ready, file?.folder, noteImages]);
 
   // Cambio desde VIVO: (1) des-escapa alertas, quita `<br />`, restaura imágenes;
@@ -204,7 +201,7 @@ export default function EditorScreen() {
   // Al entrar directo al editor (restauración de estado, enlace) la biblioteca
   // puede no haber cargado todavía.
   useEffect(() => {
-    if (!loaded) load();
+    if (!loaded) load().catch(alertLoadFailed);
   }, [loaded, load]);
 
   // Carga la nota; recarga si cambia `id` (al saltar de una nota a otra). El
@@ -310,63 +307,28 @@ export default function EditorScreen() {
   }, [content, file, ready, autosave, doSave]);
 
   // Aplica una edición y reposiciona el cursor de forma controlada.
-  const applyEdit = useCallback((next: string, caret: number) => {
-    setContent(next);
-    setSelection({ start: caret, end: caret });
+  const applyEdit = useCallback((edit: Edit | null) => {
+    if (!edit) return;
+    setContent(edit.text);
+    setSelection({ start: edit.caret, end: edit.caret });
   }, []);
 
-  // Inserta texto crudo en el cursor (o reemplaza la selección).
   const onInsert = useCallback(
-    (text: string, cursorOffset = 0) => {
-      const { start, end } = selection;
-      const next = content.slice(0, start) + text + content.slice(end);
-      applyEdit(next, start + text.length + cursorOffset);
-    },
+    (text: string, cursorOffset = 0) => applyEdit(insertAt(content, selection, text, cursorOffset)),
     [content, selection, applyEdit]
   );
-
-  // Envuelve la selección (negrita, cursiva, código). Sin selección, deja el
-  // par vacío con el cursor en medio.
   const onWrap = useCallback(
-    (wrap: string) => {
-      const { start, end } = selection;
-      const middle = content.slice(start, end);
-      const next =
-        content.slice(0, start) + wrap + middle + wrap + content.slice(end);
-      const caret = middle ? end + wrap.length * 2 : start + wrap.length;
-      applyEdit(next, caret);
-    },
+    (wrap: string) => applyEdit(wrapSelection(content, selection, wrap)),
     [content, selection, applyEdit]
   );
-
-  // Antepone un prefijo al inicio de la línea actual (encabezados, listas, cita).
   const onPrefix = useCallback(
-    (prefix: string) => {
-      const { start } = selection;
-      const lineStart = content.lastIndexOf('\n', start - 1) + 1;
-      const next = content.slice(0, lineStart) + prefix + content.slice(lineStart);
-      applyEdit(next, start + prefix.length);
-    },
+    (prefix: string) => applyEdit(prefixLine(content, selection, prefix)),
     [content, selection, applyEdit]
   );
-
-  // Limpia el formato Markdown de la selección (marcadores inline + prefijos de línea).
-  const onClear = useCallback(() => {
-    const { start, end } = selection;
-    if (start === end) return;
-    const cleaned = content
-      .slice(start, end)
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/~~([^~]+)~~/g, '$1')
-      .replace(/==([^=]+)==/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/_([^_]+)_/g, '$1')
-      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-      .replace(/^\s{0,3}>\s?/gm, '')
-      .replace(/^\s{0,3}([-*+]|\d+\.)\s+/gm, '');
-    applyEdit(content.slice(0, start) + cleaned + content.slice(end), start + cleaned.length);
-  }, [content, selection, applyEdit]);
+  const onClear = useCallback(
+    () => applyEdit(clearFormatting(content, selection)),
+    [content, selection, applyEdit]
+  );
 
   // `[[` abierto antes del cursor (sin cerrar y en la misma línea) → sugerencias.
   const wikiQuery = useMemo(() => {
@@ -394,14 +356,13 @@ export default function EditorScreen() {
     const rest = content.slice(selection.start);
     // Si el `]]` ya está escrito después del cursor, no pongas otro.
     const link = rest.startsWith(']]') ? `[[${label}` : `[[${label}]]`;
-    const next = content.slice(0, wikiQuery.from) + link + rest;
-    applyEdit(next, wikiQuery.from + `[[${label}]]`.length);
+    applyEdit({ text: content.slice(0, wikiQuery.from) + link + rest, caret: wikiQuery.from + `[[${label}]]`.length });
   };
 
   const handleExportPDF = async () => {
     if (!file) return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', noteImages);
+    const { md: resolved } = await inlineLocalImages(content, file.folder ?? '', noteImages, readImageDataUri);
     const { uri } = await Print.printToFileAsync({
       html: mdToHtml(resolved, 'pdf', { pdfMarginMm, resolveLink }),
     });
@@ -458,7 +419,7 @@ export default function EditorScreen() {
   const handleShareMd = async () => {
     if (!file) return;
     await Haptics.selectionAsync();
-    const uri = await writeTempMd(file.name, content);
+    const uri = await writeShareCopy(file.name, content);
     await Sharing.shareAsync(uri, { mimeType: 'text/markdown', dialogTitle: `${file.name}.md` });
   };
 
@@ -492,19 +453,7 @@ export default function EditorScreen() {
   // Abrir algo del árbol o de un enlace: una nota salta en el editor, un adjunto
   // va a su visor. Misma decisión en el cajón y en los [[enlaces]] del preview.
   const openFile = (target: MdFile) => {
-    if (isNote(target)) {
-      switchTo(target);
-    } else if (target.kind === 'pdf') {
-      router.push({ pathname: '/pdf/[id]', params: { id: target.id } });
-    } else if (target.kind === 'image') {
-      router.push({ pathname: '/image/[id]', params: { id: target.id } });
-    } else if (target.kind === 'text') {
-      router.push({ pathname: '/file/[id]', params: { id: target.id } });
-    } else if (target.uri) {
-      openWithSystemViewer(target.uri, target.name).catch((e: any) =>
-        appAlert(`No pude abrir "${target.name}"`, String(e?.message ?? e), undefined, { variant: 'error' })
-      );
-    }
+    if (!openAttachment(router, target)) switchTo(target);
   };
 
   const openNoteById = (noteId: string) => {
@@ -648,97 +597,6 @@ export default function EditorScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-}
-
-// Indicador de guardado. Con autosave: muestra estado. Manual: botón "Guardar"
-// cuando hay cambios sin guardar.
-function SaveIndicator({
-  state,
-  autosave,
-  onSave,
-  theme,
-}: {
-  state: SaveState;
-  autosave: boolean;
-  onSave: () => void;
-  theme: Theme;
-}) {
-  if (!autosave && state === 'dirty') {
-    return (
-      <TouchableOpacity onPress={onSave} style={[indicatorStyles.pill, { backgroundColor: theme.accent }]}>
-        <Text style={[indicatorStyles.pillText, { color: '#f5f1ea' }]}>Guardar</Text>
-      </TouchableOpacity>
-    );
-  }
-  const label = state === 'saving' ? 'Guardando…' : 'Guardado';
-  const color = state === 'saving' ? theme.accent : theme.muted;
-  return <Text style={[indicatorStyles.text, { color }]}>{label}</Text>;
-}
-
-const indicatorStyles = StyleSheet.create({
-  text: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 0.3 },
-  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
-  pillText: { fontFamily: fonts.monoMedium, fontSize: 10, letterSpacing: 0.5 },
-});
-
-// Nombre del adjunto: ordenable y sin espacios (los espacios en una ruta de
-// Markdown obligan a escaparlos y rompen en algunos renderizadores).
-function imageBaseName(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `imagen-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-}
-
-const IMG_MD_RE = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
-const IMG_HTML_RE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi;
-// Embed estilo Obsidian: ![[carpeta/foto.png]] (el `|tamaño` opcional se ignora).
-const IMG_WIKI_RE = /!\[\[\s*([^[\]|#\n]+?)\s*(?:\|[^[\]\n]*)?\]\]/g;
-
-// Reemplaza imágenes locales (Markdown y <img>) por data URIs leídos del vault.
-// `restore` mapea dataUri → ref original (para deshacer al guardar desde VIVO).
-async function inlineLocalImages(
-  content: string,
-  folder: string,
-  images: Record<string, string>
-): Promise<{ md: string; restore: Array<[string, string]> }> {
-  const refs = new Set<string>();
-  let m: RegExpExecArray | null;
-  IMG_MD_RE.lastIndex = 0;
-  while ((m = IMG_MD_RE.exec(content))) refs.add(m[1]);
-  IMG_HTML_RE.lastIndex = 0;
-  while ((m = IMG_HTML_RE.exec(content))) refs.add(m[1]);
-  IMG_WIKI_RE.lastIndex = 0;
-  // Solo los embeds que apuntan a una imagen; `![[otra nota]]` no es una imagen.
-  while ((m = IMG_WIKI_RE.exec(content))) {
-    if (/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(m[1])) refs.add(m[1]);
-  }
-
-  const findImage = createImageResolver(images);
-  const replacements: Record<string, string> = {};
-  for (const ref of refs) {
-    const uri = findImage(ref, folder);
-    if (!uri) continue;
-    try {
-      replacements[ref] = await readImageDataUri(uri);
-    } catch {
-      // imagen ilegible: la dejamos como está
-    }
-  }
-
-  let md = content;
-  const restore: Array<[string, string]> = [];
-  for (const [ref, data] of Object.entries(replacements)) {
-    md = md.split(ref).join(data);
-    restore.push([data, ref]);
-  }
-  return { md, restore };
-}
-
-async function writeTempMd(name: string, content: string): Promise<string> {
-  const safe = name.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
-  const uri = FileSystem.cacheDirectory + `${safe}.md`;
-  await FileSystem.writeAsStringAsync(uri, content);
-  return uri;
 }
 
 const styles = StyleSheet.create({

@@ -86,6 +86,14 @@ export async function deleteFile(id: string): Promise<void> {
   await AsyncStorage.setItem(INDEX_KEY, JSON.stringify(ids.filter((x) => x !== id)));
 }
 
+// Copia del .md en la caché, para el diálogo de compartir.
+export async function writeShareCopy(name: string, content: string): Promise<string> {
+  const safe = name.replace(/[^\w\-áéíóúñ ]+/gi, '').trim() || 'nota';
+  const uri = FileSystem.cacheDirectory + `${safe}.md`;
+  await FileSystem.writeAsStringAsync(uri, content);
+  return uri;
+}
+
 export function newFileId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
