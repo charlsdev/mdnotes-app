@@ -59,6 +59,7 @@
           "version": "4.1.2"
         }
       ],
+      ["./plugins/withReleaseSigning.js", { "prefix": "MDNOTES" }],
       [
         "expo-splash-screen",
         {

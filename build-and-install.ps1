@@ -5,12 +5,19 @@
 # Uso:  pwsh -File .\build-and-install.ps1              (prebuild si hace falta + compila + instala)
 #       pwsh -File .\build-and-install.ps1 -InstallOnly  (solo instala el último APK)
 #       pwsh -File .\build-and-install.ps1 -Prebuild     (fuerza regenerar android/ desde app.json)
-param([switch]$InstallOnly, [switch]$Prebuild)
+#       pwsh -File .\build-and-install.ps1 -Bundle       (.aab firmado para Google Play; no instala)
+#
+# -Bundle firma con la llave de subida (create-upload-key.ps1, plugins/withReleaseSigning.js).
+# Tras crearla, la primera vez va con -Prebuild: el plugin vive en build.gradle.
+# OJO: `pwsh -File` ignora EN SILENCIO los parámetros que no existen aquí.
+param([switch]$InstallOnly, [switch]$Prebuild, [switch]$Bundle)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $apk = Join-Path $root 'android\app\build\outputs\apk\release\app-release.apk'
+$aab = Join-Path $root 'android\app\build\outputs\bundle\release\app-release.aab'
 $pkg = 'xyz.charlsdev.mdnotes'
+if ($Bundle -and $InstallOnly) { throw '-Bundle e -InstallOnly no van juntos: el .aab no se instala por USB.' }
 
 function First-Existing([string[]]$paths) {
   foreach ($p in $paths) { if ($p -and (Test-Path $p)) { return $p } }
@@ -127,10 +134,19 @@ if (-not $InstallOnly) {
     if ($LASTEXITCODE -ne 0) { throw "expo prebuild falló (exit $LASTEXITCODE)" }
   }
 
-  Write-Host '› Compilando APK release…' -ForegroundColor Cyan
+  $task = if ($Bundle) { 'bundleRelease' } else { 'assembleRelease' }
+  Write-Host "› Compilando $(if ($Bundle) { 'AAB para Google Play' } else { 'APK release' })…" -ForegroundColor Cyan
   Push-Location $androidDir
-  try { & .\gradlew.bat assembleRelease } finally { Pop-Location }
+  try { & .\gradlew.bat $task } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) { throw "Gradle falló (exit $LASTEXITCODE)" }
+}
+
+if ($Bundle) {
+  if (-not (Test-Path $aab)) { throw "No existe el AAB: $aab" }
+  $sizeMB = '{0:N1} MB' -f ((Get-Item $aab).Length / 1MB)
+  Write-Host "✓ AAB listo ($sizeMB): $aab" -ForegroundColor Green
+  Write-Host '  Súbelo en Play Console. Antes de la siguiente subida, sube android.versionCode en app.json.'
+  exit 0
 }
 
 if (-not (Test-Path $apk)) { throw "No existe el APK: $apk" }

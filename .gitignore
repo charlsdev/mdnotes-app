@@ -28,3 +28,7 @@ package-lock.json
 
 expo-env.d.ts
 # @end expo-cli
+
+# Llave de subida a Google Play (vive fuera del repo; ver create-upload-key.ps1)
+*.keystore
+signing.properties

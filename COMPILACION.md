@@ -117,4 +117,30 @@ Si `adb install` falla con `INSTALL_FAILED_USER_RESTRICTED` es **restricción de
 
 `eas.json` está listo. Para nube: `eas build -p android --profile preview` (APK) o
 `--profile production`. `.easignore` excluye `initials/`. Detalle general en
-`initials/COMPILACION.md`.
+`initials/COMPILACION.md`. Ojo: `eas.json` usa `appVersionSource: "remote"`, así que
+EAS lleva su propio `versionCode` e ignora el de `app.json`; el build local usa el de
+`app.json`.
+
+## Google Play: `.aab` firmado en local
+
+El APK de arriba va firmado con `debug.keystore`; Play lo rechaza. Para Play:
+
+```powershell
+pwsh -File .\create-upload-key.ps1                    # UNA vez: crea la llave de subida
+pwsh -File .\build-and-install.ps1 -Prebuild -Bundle  # la primera vez tras crearla
+pwsh -File .\build-and-install.ps1 -Bundle            # las siguientes (no instala)
+```
+
+- La llave y su `signing.properties` quedan en `G:\NodeJS\Secretos\MDNotes\`, y
+  `~\.gradle\gradle.properties` apunta a ellos con `MDNOTES_SIGNING`. Nada entra al
+  repo. **Respalda esa carpeta.**
+- `plugins/withReleaseSigning.js` reescribe la firma de `build.gradle` en cada prebuild.
+  Solo `bundleRelease` usa la llave de subida: el APK de USB sigue con la de debug, para
+  no chocar con la app instalada (el script la desinstalaría y perderías los vaults
+  abiertos). Sin `MDNOTES_SIGNING`, `-Bundle` falla a propósito.
+- Sale en `android/app/build/outputs/bundle/release/app-release.aab`. En Play Console
+  deja **Play App Signing** activado. Sube `android.versionCode` en `app.json` antes de
+  cada envío (hoy `1`, versión `1.0.0`).
+- Cámara y micrófono están desactivados en el plugin de `expo-image-picker` (la app solo
+  elige fotos de la galería): así el manifiesto no los declara y la ficha de seguridad
+  de datos no tiene que justificarlos.
