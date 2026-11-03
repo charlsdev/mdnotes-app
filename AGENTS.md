@@ -464,6 +464,26 @@ nota nueva → **MD**. **VIVO** es opt-in por nota (carga el editor pesado).
   `<KeyboardAvoidingView behavior="padding">`). Es **módulo nativo** → **NO corre en
   Expo Go**; probar solo con APK (`build-and-install.ps1 -Prebuild`). Ver COMPILACION.md.
 
+### Bloqueo con PIN y huella
+Mismo diseño que rxtribe/daemoni: `src/storage/lock.ts` (PIN de 4 cifras hasheado
+SHA-256 + salt en **SecureStore**, huella con `expo-local-authentication`, capas
+independientes), `components/LockGate.tsx` (montado en `_layout` después del Stack),
+`PinPad.tsx` y `LockSettings.tsx` (Ajustes → BLOQUEO). Módulos nativos: cambiarlos
+exige `-Prebuild`. Diferencias que importan:
+- **Sin cuenta a la que volver.** "¿Olvidaste tu PIN?" y los 5 fallos se resuelven con
+  el **bloqueo de pantalla del teléfono** (`verifyOwner`): olvidar → quita el PIN;
+  5 fallos → abre y conserva el PIN. Por eso **no se deja activar** sin bloqueo de
+  pantalla en el teléfono (`deviceSecured`): olvidar el PIN dejaría las notas internas
+  inaccesibles. El bloqueo de la app vale lo que el del teléfono, por diseño.
+- **`LockGate` es un `<Modal>`**, no un overlay: el cajón y los diálogos son Modals y
+  un View encima del Stack quedaría DEBAJO (con el cajón abierto, la nota se vería).
+  Atrás en el bloqueo manda la app al fondo (`BackHandler.exitApp`).
+- Huella activada pero borrada del teléfono → **sigue bloqueada** y abre con el
+  bloqueo del sistema; no se desactiva sola.
+- Vuelve a bloquear tras **30 s** en segundo plano (`GRACE_MS`): el selector de
+  carpeta (SAF), la galería, compartir y "abrir con" pasan por segundo plano.
+- Bloquea solo la UI: los `.md` de las carpetas siguen siendo archivos del teléfono.
+
 ### Status bar / edge-to-edge (SDK 54)
 SDK 54 dibuja bajo el status bar. `SafeAreaProvider` lleva `initialMetrics={initialWindowMetrics}`
 en `_layout`. Las pantallas usan `SafeAreaView edges={['top']}`. **Los Modales son root

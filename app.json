@@ -8,7 +8,9 @@
     "scheme": "mdnotes",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["assets/**/*"],
+    "assetBundlePatterns": [
+      "assets/**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "xyz.charlsdev.mdnotes",
@@ -18,7 +20,10 @@
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "Markdown",
-            "LSItemContentTypes": ["net.daringfireball.markdown", "public.text"],
+            "LSItemContentTypes": [
+              "net.daringfireball.markdown",
+              "public.text"
+            ],
             "LSHandlerRank": "Alternate"
           }
         ]
@@ -30,11 +35,22 @@
         "backgroundColor": "#f5f1ea"
       },
       "package": "xyz.charlsdev.mdnotes",
-      "versionCode": 1,      "intentFilters": [
+      "versionCode": 1,
+      "intentFilters": [
         {
           "action": "VIEW",
-          "data": [{ "mimeType": "text/markdown" }, { "mimeType": "text/plain" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "mimeType": "text/markdown"
+            },
+            {
+              "mimeType": "text/plain"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -59,7 +75,12 @@
           "version": "4.1.2"
         }
       ],
-      ["./plugins/withReleaseSigning.js", { "prefix": "MDNOTES" }],
+      [
+        "./plugins/withReleaseSigning.js",
+        {
+          "prefix": "MDNOTES"
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -71,6 +92,24 @@
             "image": "./assets/icon-dark.png",
             "backgroundColor": "#12100e"
           }
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "MDNotes usa Face ID para desbloquear la app."
         }
       ]
     ],

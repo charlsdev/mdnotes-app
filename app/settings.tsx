@@ -15,6 +15,7 @@ import {
 import { sanitizeFolderPath, folderSuggestions, type AttachmentMode } from '@/lib/paths';
 import { useFilesStore } from '@/storage/store';
 import { Footer } from '@/components/Footer';
+import { LockSettings } from '@/components/LockSettings';
 
 // Qué va a pasar, en concreto: el modo por sí solo no dice dónde termina la foto.
 function attachmentHint(mode: AttachmentMode, folder: string): string {
@@ -276,6 +277,14 @@ export default function SettingsScreen() {
         <Text style={[styles.note, { color: theme.muted }]}>
           Se aplica al exportar una nota como PDF (hoja A4).
         </Text>
+
+        <LockSettings
+          sectionStyle={styles.section}
+          rowStyle={styles.row}
+          labelStyle={styles.rowLabel}
+          hintStyle={styles.rowHint}
+          noteStyle={styles.note}
+        />
 
         <Footer />
       </ScrollView>

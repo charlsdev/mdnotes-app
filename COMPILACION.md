@@ -141,6 +141,12 @@ pwsh -File .\build-and-install.ps1 -Bundle            # las siguientes (no insta
 - Sale en `android/app/build/outputs/bundle/release/app-release.aab`. En Play Console
   deja **Play App Signing** activado. Sube `android.versionCode` en `app.json` antes de
   cada envío (hoy `1`, versión `1.0.0`).
+- **R8 activado** (`expo-build-properties` en `app.json`: `enableMinifyInReleaseBuilds` +
+  `enableShrinkResourcesInReleaseBuilds`): Play pide al menos un 25 % de optimización del
+  código DEX. Aplica a TODO build release, también al APK de USB (`assembleRelease`), así
+  que ese APK sirve para probarlo. Si una pantalla se cierra al abrirla en release, suele
+  ser una librería con reflexión: añadir su regla en `extraProguardRules`, no apagar R8.
+  Cambiarlo exige `-Prebuild`.
 - Cámara y micrófono están desactivados en el plugin de `expo-image-picker` (la app solo
   elige fotos de la galería): así el manifiesto no los declara y la ficha de seguridad
   de datos no tiene que justificarlos.

@@ -85,6 +85,9 @@ Docs: **AGENTS.md** (arquitectura + gotchas) · **COMPILACION.md** (build) · **
 - **Imágenes** de galería redimensionadas y comprimidas. Con carpeta abierta se guardan como
   **archivo de la carpeta** (`adjuntos/`, o donde diga la config de Obsidian) y la nota solo
   lleva la ruta: el `.md` queda legible y portable. Sin carpeta, se incrustan en la nota.
+- **Bloqueo con PIN y/o huella** (Ajustes → Bloqueo): al abrir la app y tras 30 s fuera.
+  Si olvidas el PIN, entras con el bloqueo de pantalla del teléfono (por eso pide que
+  el teléfono tenga uno).
 - **Ajustes** (⚙): **carpeta de imágenes** (automática / junto a la nota / carpeta fija),
   **tema** (sistema/claro/oscuro), **tamaño** y **fuente** de lectura, autoguardado,
   margen del PDF. Búsqueda en contenido.

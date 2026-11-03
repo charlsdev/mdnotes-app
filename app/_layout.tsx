@@ -21,6 +21,7 @@ import {
 import { useFonts } from 'expo-font';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { AlertProvider } from '@/components/AppAlert';
+import { LockGate } from '@/components/LockGate';
 import { useSettings } from '@/storage/settings';
 import { useEffectiveScheme } from '@/theme';
 
@@ -69,6 +70,8 @@ export default function RootLayout() {
               <Stack.Screen name="file/[id]" />
               <Stack.Screen name="settings" />
             </Stack>
+            {/* Después del Stack: un Modal que tapa todo, incluidos cajón y diálogos. */}
+            <LockGate />
           </AlertProvider>
         </SafeAreaProvider>
       </KeyboardProvider>
